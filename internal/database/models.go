@@ -5,6 +5,7 @@
 package database
 
 import (
+	"database/sql"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,4 +16,6 @@ type User struct {
 	Username     string
 	PasswordHash string
 	CreatedAt    time.Time
+	SessionToken sql.NullString
+	CsrfToken    sql.NullString
 }

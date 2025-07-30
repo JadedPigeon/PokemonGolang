@@ -7,10 +7,35 @@ package database
 
 import (
 	"context"
+	"database/sql"
+
+	"github.com/google/uuid"
 )
 
+const createUser = `-- name: CreateUser :exec
+INSERT INTO users (
+    id,
+    username,
+    password_hash,
+    created_at
+) VALUES (
+    $1, $2, $3, NOW()
+)
+`
+
+type CreateUserParams struct {
+	ID           uuid.UUID
+	Username     string
+	PasswordHash string
+}
+
+func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) error {
+	_, err := q.db.ExecContext(ctx, createUser, arg.ID, arg.Username, arg.PasswordHash)
+	return err
+}
+
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, password_hash, created_at FROM users WHERE username = $1
+SELECT id, username, password_hash, created_at, session_token, csrf_token FROM users WHERE username = $1
 `
 
 func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User, error) {
@@ -21,6 +46,26 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 		&i.Username,
 		&i.PasswordHash,
 		&i.CreatedAt,
+		&i.SessionToken,
+		&i.CsrfToken,
 	)
 	return i, err
+}
+
+const setUserSession = `-- name: SetUserSession :exec
+UPDATE users
+SET session_token = $1,
+    csrf_token = $2
+WHERE id = $3
+`
+
+type SetUserSessionParams struct {
+	SessionToken sql.NullString
+	CsrfToken    sql.NullString
+	ID           uuid.UUID
+}
+
+func (q *Queries) SetUserSession(ctx context.Context, arg SetUserSessionParams) error {
+	_, err := q.db.ExecContext(ctx, setUserSession, arg.SessionToken, arg.CsrfToken, arg.ID)
+	return err
 }

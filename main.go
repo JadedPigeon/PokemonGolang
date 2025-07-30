@@ -1,10 +1,21 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
+
+	"github.com/JadedPigeon/pokemongolang/internal/database"
+	"github.com/google/uuid"
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 )
+
+type config struct {
+	DB *database.Queries
+}
 
 type Login struct {
 	HashedPassword string
@@ -13,19 +24,35 @@ type Login struct {
 }
 
 // Key in the username to stand in for a db for now
-var users = map[string]Login{}
+// var users = map[string]Login{}
 
 func main() {
+	godotenv.Load()
+	dbURL := os.Getenv("DB_URL")
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		fmt.Println("Error loading db: ", err)
+	}
+	err = db.Ping()
+	if err != nil {
+		fmt.Println("Error connecting to DB: ", err)
+		return
+	}
+
+	cfg := &config{
+		DB: database.New(db),
+	}
+
 	//Four main endpoints to start with:
-	http.HandleFunc("/register", RegisterHandler)
-	http.HandleFunc("/login", LoginHandler)
-	http.HandleFunc("/lougout", LogoutHandler)
+	http.HandleFunc("/register", cfg.RegisterHandler)
+	http.HandleFunc("/login", cfg.LoginHandler)
+	http.HandleFunc("/logout", cfg.LogoutHandler)
 	//Test endpoint to see if user is logged in
-	http.HandleFunc("/protected", ProectedHandler)
+	http.HandleFunc("/protected", cfg.ProtectedHandler)
 	http.ListenAndServe(":8080", nil)
 }
 
-func RegisterHandler(w http.ResponseWriter, r *http.Request) {
+func (cfg *config) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
 		return
@@ -34,9 +61,14 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 
-	// check if user already exists. Will need to update to check against db in the future
-	if _, ok := users[username]; ok {
+	// check if user already exists
+	user, err := cfg.DB.GetUserByUsername(r.Context(), username)
+	if err == nil && user.ID != uuid.Nil {
+		fmt.Printf("User found: %+v\n", user)
 		http.Error(w, "User already exists", http.StatusConflict)
+		return
+	} else if err != nil && err != sql.ErrNoRows {
+		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
 	}
 
@@ -45,15 +77,20 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Error hashing password", http.StatusInternalServerError)
 		return
 	}
-	// Store in the db later
-	users[username] = Login{
-		HashedPassword: hashedPassword,
+
+	if err := cfg.DB.CreateUser(r.Context(), database.CreateUserParams{
+		ID:           uuid.New(),
+		Username:     username,
+		PasswordHash: hashedPassword,
+	}); err != nil {
+		http.Error(w, "Error creating user", http.StatusInternalServerError)
+		return
 	}
 
 	fmt.Fprintln(w, "User registered successfully")
 }
 
-func LoginHandler(w http.ResponseWriter, r *http.Request) {
+func (cfg *config) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
 		return
@@ -62,10 +99,10 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 
-	// check against db later
-	user, ok := users[username]
-	if !ok || !checkPasswordHash(password, user.HashedPassword) {
-		http.Error(w, "User not found", http.StatusNotFound)
+	// check if user exists and validate password
+	user_db, err := cfg.DB.GetUserByUsername(r.Context(), username)
+	if err != nil || user_db.ID == uuid.Nil || !checkPasswordHash(password, user_db.PasswordHash) {
+		http.Error(w, "Invalid login", http.StatusUnauthorized)
 		return
 	}
 
@@ -89,17 +126,21 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: false, // CSRF token should be accessible by JavaScript
 	})
 
-	// store the session token
-	user.SessionToken = sessionToken
-	user.CSRFToken = csrfToken
-	// Update later to store in db
-	users[username] = user
+	// Update session in db
+	err = cfg.DB.SetUserSession(r.Context(), database.SetUserSessionParams{
+		SessionToken: sql.NullString{String: sessionToken, Valid: true},
+		CsrfToken:    sql.NullString{String: csrfToken, Valid: true},
+		ID:           user_db.ID,
+	})
+	if err != nil {
+		http.Error(w, "Error setting user session", http.StatusInternalServerError)
+	}
 
 	fmt.Fprintln(w, "Login successfully")
 }
 
-func LogoutHandler(w http.ResponseWriter, r *http.Request) {
-	if err := Authorize(r); err != nil {
+func (cfg *config) LogoutHandler(w http.ResponseWriter, r *http.Request) {
+	if err := cfg.Authorize(r); err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
@@ -121,27 +162,36 @@ func LogoutHandler(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: false,
 	})
 
-	// clear tokens from "db" - update later
+	// clear tokens from db
 	username := r.FormValue("username")
-	user := users[username]
-	user.SessionToken = ""
-	user.CSRFToken = ""
-	users[username] = user
+	user_db, err := cfg.DB.GetUserByUsername(r.Context(), username)
+	if err != nil {
+		http.Error(w, "Error getting user", http.StatusInternalServerError)
+		return
+	}
+	err = cfg.DB.SetUserSession(r.Context(), database.SetUserSessionParams{
+		SessionToken: sql.NullString{Valid: false},
+		CsrfToken:    sql.NullString{Valid: false},
+		ID:           user_db.ID,
+	})
+	if err != nil {
+		http.Error(w, "Error clearing user session", http.StatusInternalServerError)
+	}
 
 	fmt.Fprintln(w, "Logged out successfully")
 }
 
-func ProectedHandler(w http.ResponseWriter, r *http.Request) {
+func (cfg *config) ProtectedHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
 		return
 	}
 
-	if err := Authorize(r); err != nil {
+	if err := cfg.Authorize(r); err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
 
 	username := r.FormValue("username")
-	fmt.Fprintf(w, "Hello %s, you are logged in!", username)
+	fmt.Fprintf(w, "Hello %s, you are making a protected call!", username)
 }
