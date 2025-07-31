@@ -1,6 +1,9 @@
 -- name: GetUserByUsername :one
 SELECT * FROM users WHERE username = $1;
 
+-- name: GetUserBySessionToken :one
+SELECT * FROM users WHERE session_token = $1;
+
 -- name: CreateUser :exec
 INSERT INTO users (
     id,

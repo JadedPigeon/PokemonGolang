@@ -34,6 +34,24 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) error {
 	return err
 }
 
+const getUserBySessionToken = `-- name: GetUserBySessionToken :one
+SELECT id, username, password_hash, created_at, session_token, csrf_token FROM users WHERE session_token = $1
+`
+
+func (q *Queries) GetUserBySessionToken(ctx context.Context, sessionToken sql.NullString) (User, error) {
+	row := q.db.QueryRowContext(ctx, getUserBySessionToken, sessionToken)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.PasswordHash,
+		&i.CreatedAt,
+		&i.SessionToken,
+		&i.CsrfToken,
+	)
+	return i, err
+}
+
 const getUserByUsername = `-- name: GetUserByUsername :one
 SELECT id, username, password_hash, created_at, session_token, csrf_token FROM users WHERE username = $1
 `
