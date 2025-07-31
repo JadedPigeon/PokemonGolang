@@ -54,6 +54,47 @@ func (q *Queries) FetchPokemonDataByName(ctx context.Context, lower string) (Pok
 	return i, err
 }
 
+const getMoveByID = `-- name: GetMoveByID :one
+SELECT move_id, name, power, type, description FROM moves WHERE move_id = $1
+`
+
+func (q *Queries) GetMoveByID(ctx context.Context, moveID int32) (Move, error) {
+	row := q.db.QueryRowContext(ctx, getMoveByID, moveID)
+	var i Move
+	err := row.Scan(
+		&i.MoveID,
+		&i.Name,
+		&i.Power,
+		&i.Type,
+		&i.Description,
+	)
+	return i, err
+}
+
+const insertMove = `-- name: InsertMove :exec
+INSERT INTO moves (move_id, name, power, type, description)
+VALUES ($1, $2, $3, $4, $5)
+`
+
+type InsertMoveParams struct {
+	MoveID      int32
+	Name        string
+	Power       int32
+	Type        string
+	Description sql.NullString
+}
+
+func (q *Queries) InsertMove(ctx context.Context, arg InsertMoveParams) error {
+	_, err := q.db.ExecContext(ctx, insertMove,
+		arg.MoveID,
+		arg.Name,
+		arg.Power,
+		arg.Type,
+		arg.Description,
+	)
+	return err
+}
+
 const insertPokedex = `-- name: InsertPokedex :exec
 INSERT INTO pokedex (
     id, name, type_1, type_2, hp, attack, defense, special_attack, special_defense, speed
@@ -88,5 +129,20 @@ func (q *Queries) InsertPokedex(ctx context.Context, arg InsertPokedexParams) er
 		arg.SpecialDefense,
 		arg.Speed,
 	)
+	return err
+}
+
+const insertPokemonMove = `-- name: InsertPokemonMove :exec
+INSERT INTO pokemon_moves (pokemon_id, move_id)
+VALUES ($1, $2)
+`
+
+type InsertPokemonMoveParams struct {
+	PokemonID sql.NullInt32
+	MoveID    sql.NullInt32
+}
+
+func (q *Queries) InsertPokemonMove(ctx context.Context, arg InsertPokemonMoveParams) error {
+	_, err := q.db.ExecContext(ctx, insertPokemonMove, arg.PokemonID, arg.MoveID)
 	return err
 }

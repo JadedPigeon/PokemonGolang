@@ -18,6 +18,14 @@ type ChallengerPokemon struct {
 	CreatedAt sql.NullTime
 }
 
+type Move struct {
+	MoveID      int32
+	Name        string
+	Power       int32
+	Type        string
+	Description sql.NullString
+}
+
 type Pokedex struct {
 	ID             int32
 	Name           string
@@ -34,8 +42,7 @@ type Pokedex struct {
 type PokemonMove struct {
 	ID        int32
 	PokemonID sql.NullInt32
-	MoveName  string
-	Power     int32
+	MoveID    sql.NullInt32
 }
 
 type User struct {

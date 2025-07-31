@@ -30,7 +30,7 @@ func main() {
 	cfg := &handlers.Config{DB: database.New(db)}
 
 	// testing
-	if err := cfg.FetchPokemonData(context.Background(), "Charizard"); err != nil {
+	if err := cfg.FetchPokemonData(context.Background(), "jolteon"); err != nil {
 		log.Fatalf("failed to fetch pokemon: %v", err)
 	} else {
 		log.Println("Pokemon inserted/skipped successfully")
