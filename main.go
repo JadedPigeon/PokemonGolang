@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 
@@ -27,6 +29,13 @@ func main() {
 
 	cfg := &handlers.Config{DB: database.New(db)}
 
+	// testing
+	if err := cfg.FetchPokemonData(context.Background(), "Charizard"); err != nil {
+		log.Fatalf("failed to fetch pokemon: %v", err)
+	} else {
+		log.Println("Pokemon inserted/skipped successfully")
+	}
+
 	//Four main endpoints to start with:
 	http.HandleFunc("/register", cfg.RegisterHandler)
 	http.HandleFunc("/login", cfg.LoginHandler)
@@ -34,4 +43,5 @@ func main() {
 	//Test endpoint to see if user is logged in
 	http.HandleFunc("/protected", cfg.ProtectedHandler)
 	http.ListenAndServe(":8080", nil)
+
 }

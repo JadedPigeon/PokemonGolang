@@ -11,6 +11,33 @@ import (
 	"github.com/google/uuid"
 )
 
+type ChallengerPokemon struct {
+	ID        uuid.UUID
+	PokemonID sql.NullInt32
+	CurrentHp int32
+	CreatedAt sql.NullTime
+}
+
+type Pokedex struct {
+	ID             int32
+	Name           string
+	Type1          string
+	Type2          sql.NullString
+	Hp             int32
+	Attack         int32
+	Defense        int32
+	SpecialAttack  int32
+	SpecialDefense int32
+	Speed          int32
+}
+
+type PokemonMove struct {
+	ID        int32
+	PokemonID sql.NullInt32
+	MoveName  string
+	Power     int32
+}
+
 type User struct {
 	ID           uuid.UUID
 	Username     string
@@ -18,4 +45,14 @@ type User struct {
 	CreatedAt    time.Time
 	SessionToken sql.NullString
 	CsrfToken    sql.NullString
+}
+
+type UserPokemon struct {
+	ID        uuid.UUID
+	UserID    uuid.UUID
+	PokemonID sql.NullInt32
+	Nickname  sql.NullString
+	CurrentHp int32
+	IsActive  bool
+	CreatedAt sql.NullTime
 }

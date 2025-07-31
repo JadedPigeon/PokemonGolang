@@ -24,6 +24,7 @@ type Login struct {
 
 var ErrUnauthorized = errors.New("Unauthorized")
 
+// To do: make Authorize middleware
 func (cfg *Config) Authorize(r *http.Request) (*database.User, error) {
 	// Look up user by cookie
 	cookie, err := r.Cookie("session_token")
