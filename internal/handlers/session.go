@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -24,7 +25,6 @@ type Login struct {
 
 var ErrUnauthorized = errors.New("Unauthorized")
 
-// To do: make Authorize middleware
 func (cfg *Config) Authorize(r *http.Request) (*database.User, error) {
 	// Look up user by cookie
 	cookie, err := r.Cookie("session_token")
@@ -42,6 +42,20 @@ func (cfg *Config) Authorize(r *http.Request) (*database.User, error) {
 		return nil, ErrUnauthorized
 	}
 	return &user, nil
+}
+
+func (cfg *Config) AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, err := cfg.Authorize(r)
+		if err != nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		// Optionally, set user in context for downstream handlers
+		ctx := r.Context()
+		ctx = context.WithValue(ctx, "user", user)
+		next(w, r.WithContext(ctx))
+	}
 }
 
 func (cfg *Config) RegisterHandler(w http.ResponseWriter, r *http.Request) {
@@ -191,9 +205,9 @@ func (cfg *Config) ProtectedHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := cfg.Authorize(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusUnauthorized)
+	user, ok := r.Context().Value("user").(*database.User)
+	if !ok || user == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 

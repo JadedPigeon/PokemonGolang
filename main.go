@@ -39,9 +39,8 @@ func main() {
 	//Four main endpoints to start with:
 	http.HandleFunc("/register", cfg.RegisterHandler)
 	http.HandleFunc("/login", cfg.LoginHandler)
-	http.HandleFunc("/logout", cfg.LogoutHandler)
-	//Test endpoint to see if user is logged in
-	http.HandleFunc("/protected", cfg.ProtectedHandler)
+	http.HandleFunc("/logout", cfg.AuthMiddleware(cfg.LogoutHandler))
+	http.HandleFunc("/protected", cfg.AuthMiddleware(cfg.ProtectedHandler))
 	http.ListenAndServe(":8080", nil)
 
 }

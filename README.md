@@ -2,5 +2,5 @@
 
 ## Todo/Fixes
 - Middleware wrap the auth api
-- Need to get moves list added to pokedex
+- Review new functions
 - API for user to get pokemon
