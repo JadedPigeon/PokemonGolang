@@ -266,6 +266,7 @@ func (cfg *Config) CatchPokemonHandler(w http.ResponseWriter, r *http.Request) {
 	pokemon := r.PostForm.Get("pokemon_identifier")
 	if pokemon == "" {
 		http.Error(w, "pokemon_identifier is required", http.StatusBadRequest)
+		return
 	}
 
 	ctx := r.Context()
@@ -279,12 +280,14 @@ func (cfg *Config) CatchPokemonHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("error checking for existing pokemon: %s", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
 	}
 
 	// Add pokemon to the user's collection
 	partysize, err := cfg.DB.CountUserPokemon(ctx, user.ID)
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
 	}
 	if partysize >= 6 {
 		http.Error(w, "You can only have at most six pokemon in your party", http.StatusBadRequest)

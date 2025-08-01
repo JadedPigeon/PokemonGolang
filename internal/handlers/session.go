@@ -41,6 +41,7 @@ func (cfg *Config) Authorize(r *http.Request) (*database.User, error) {
 	if !user.CsrfToken.Valid || csrf != user.CsrfToken.String {
 		return nil, ErrUnauthorized
 	}
+
 	return &user, nil
 }
 
@@ -121,9 +122,14 @@ func (cfg *Config) LoginHandler(w http.ResponseWriter, r *http.Request) {
 
 	// check if user exists and validate password
 	user_db, err := cfg.DB.GetUserByUsername(r.Context(), username)
-	if err != nil || user_db.ID == uuid.Nil || !checkPasswordHash(password, user_db.PasswordHash) {
-		http.Error(w, "Invalid login", http.StatusUnauthorized)
+	if err != nil || user_db.ID == uuid.Nil {
 		log.Printf("DB error: %v", err)
+		http.Error(w, "Invalid login", http.StatusUnauthorized)
+		return
+	}
+	if !checkPasswordHash(password, user_db.PasswordHash) {
+		log.Printf("Invalid password for user: %s", username)
+		http.Error(w, "Invalid login", http.StatusUnauthorized)
 		return
 	}
 
@@ -205,12 +211,15 @@ func (cfg *Config) LogoutHandler(w http.ResponseWriter, r *http.Request) {
 // Use to test protected endpoints
 func (cfg *Config) ProtectedHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		user, ok := r.Context().Value(userContextKey).(*database.User)
-		if !ok || user == nil {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-
-		fmt.Fprintf(w, "Hello %s, you are making a protected call!", user.Username)
+		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
+		return
 	}
+
+	user, ok := r.Context().Value(userContextKey).(*database.User)
+	if !ok || user == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	fmt.Fprintf(w, "Hello %s, you are making a protected call!", user.Username)
 }
