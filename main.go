@@ -2,7 +2,7 @@ package main
 
 import (
 	"database/sql"
-	"fmt"
+	"log"
 	"net/http"
 	"os"
 
@@ -17,12 +17,10 @@ func main() {
 	dbURL := os.Getenv("DB_URL")
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
-		fmt.Println("Error loading db: ", err)
+		log.Fatalf("Error opening DB: %v", err)
 	}
-	err = db.Ping()
-	if err != nil {
-		fmt.Println("Error connecting to DB: ", err)
-		return
+	if err := db.Ping(); err != nil {
+		log.Fatalf("Error pinging DB: %v", err)
 	}
 
 	cfg := &handlers.Config{DB: database.New(db)}
@@ -40,6 +38,6 @@ func main() {
 	http.HandleFunc("/logout", cfg.AuthMiddleware(cfg.LogoutHandler))
 	http.HandleFunc("/protected", cfg.AuthMiddleware(cfg.ProtectedHandler))
 	http.HandleFunc("/catch", cfg.AuthMiddleware(cfg.CatchPokemonHandler))
-	http.ListenAndServe(":8080", nil)
+	log.Fatal(http.ListenAndServe(":8080", nil))
 
 }
