@@ -210,10 +210,6 @@ func (cfg *Config) ProtectedHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
-		if !ok || user == nil {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
 
 		fmt.Fprintf(w, "Hello %s, you are making a protected call!", user.Username)
 	}
