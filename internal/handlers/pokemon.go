@@ -38,25 +38,45 @@ type PokeAPIResponse struct {
 	} `json:"moves"`
 }
 
-// If the pokemon doesn't exist in the PokeDex already it fetches the data from the PokeAPI
-func (cfg *Config) FetchPokemonData(ctx context.Context, identifier string) error {
-	// Check if name or ID is provided
-	var err error
+// Check if poksemon exists in db, if not get it, then return pokemon data
+func (cfg *Config) GetPokemon(ctx context.Context, identifier string) (*database.Pokedex, error) {
+	var (
+		pokedexEntry database.Pokedex
+		err          error
+	)
+
 	if id, parseErr := strconv.Atoi(identifier); parseErr == nil {
-		_, err = cfg.DB.FetchPokemonDataById(ctx, int32(id))
+		pokedexEntry, err = cfg.DB.FetchPokemonDataById(ctx, int32(id))
 	} else {
-		_, err = cfg.DB.FetchPokemonDataByName(ctx, strings.ToLower(identifier))
-	}
-	// Validate that the pokemon does not already exist
-	// This should be validated before this function is called
-	// If the pokemon already exists we exit early and log a message
-	if err == nil {
-		log.Printf("pokemon with ID %s already exists in the PokeDex, skipping", identifier)
-		return nil
-	} else if err != sql.ErrNoRows {
-		return fmt.Errorf("error checking for existing pokemon: %w", err)
+		pokedexEntry, err = cfg.DB.FetchPokemonDataByName(ctx, strings.ToLower(identifier))
 	}
 
+	if err == nil {
+		return &pokedexEntry, nil
+	} else if err != sql.ErrNoRows {
+		return nil, err
+	}
+
+	// If not found, fetch from API and insert
+	if fetchErr := cfg.FetchPokemonData(ctx, identifier); fetchErr != nil {
+		log.Printf("error fetching pokemon data: %s", fetchErr)
+		return nil, fetchErr
+	}
+
+	// Try fetching again after insert
+	if id, parseErr := strconv.Atoi(identifier); parseErr == nil {
+		pokedexEntry, err = cfg.DB.FetchPokemonDataById(ctx, int32(id))
+	} else {
+		pokedexEntry, err = cfg.DB.FetchPokemonDataByName(ctx, strings.ToLower(identifier))
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &pokedexEntry, nil
+}
+
+// Get pokemon from PokeAPI and insert in db
+func (cfg *Config) FetchPokemonData(ctx context.Context, identifier string) error {
 	resp, err := http.Get(fmt.Sprintf("%s%s", pokeapi, identifier))
 	if err != nil {
 		return fmt.Errorf("failed to fetch data: %w", err)
@@ -229,4 +249,77 @@ func (cfg *Config) FetchPokemonMoveData(ctx context.Context, moveID int) (*MoveD
 	}
 
 	return &move, nil
+}
+
+// Catch pokemon
+func (cfg *Config) CatchPokemonHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad form data", http.StatusBadRequest)
+		return
+	}
+	// pokemone_identifier can be either name of ID
+	pokemon := r.PostForm.Get("pokemon_identifier")
+	if pokemon == "" {
+		http.Error(w, "pokemon_identifier is required", http.StatusBadRequest)
+	}
+
+	ctx := r.Context()
+	user, ok := r.Context().Value(userContextKey).(*database.User)
+	if !ok || user == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	// Get pokemon ID
+	pokemonEntry, err := cfg.GetPokemon(ctx, pokemon)
+	if err != nil {
+		log.Printf("error checking for existing pokemon: %s", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
+
+	// Add pokemon to the user's collection
+	partysize, err := cfg.DB.CountUserPokemon(ctx, user.ID)
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
+	if partysize >= 6 {
+		http.Error(w, "You can only have at most six pokemon in your party", http.StatusBadRequest)
+		return
+	}
+
+	err = cfg.DB.InsertUserPokemon(ctx, database.InsertUserPokemonParams{
+		UserID:    user.ID,
+		PokemonID: sql.NullInt32{Valid: true, Int32: int32(pokemonEntry.ID)},
+		Nickname:  sql.NullString{Valid: false},
+		CurrentHp: int32(pokemonEntry.Hp),
+		IsActive:  false,
+	})
+	if err != nil {
+		log.Printf("error inserting user pokemon: %s", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	err = cfg.DB.DeactivateAllUserPokemon(ctx, user.ID)
+	if err != nil {
+		log.Printf("error deactivating user's pokemon to set new active: %s", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	err = cfg.DB.ActivateUserPokemon(ctx, database.ActivateUserPokemonParams{
+		UserID:    user.ID,
+		PokemonID: sql.NullInt32{Valid: true, Int32: int32(pokemonEntry.ID)},
+	})
+	if err != nil {
+		log.Printf("error activating user's new pokemon: %s", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	fmt.Printf("User %s caught pokemon %s (ID: %d)\n", user.Username, pokemonEntry.Name, pokemonEntry.ID)
+	w.WriteHeader(http.StatusOK)
 }

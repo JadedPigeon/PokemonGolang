@@ -8,7 +8,47 @@ package database
 import (
 	"context"
 	"database/sql"
+
+	"github.com/google/uuid"
 )
+
+const activateUserPokemon = `-- name: ActivateUserPokemon :exec
+UPDATE user_pokemon
+SET is_active = true
+WHERE user_id = $1 AND pokemon_id = $2
+`
+
+type ActivateUserPokemonParams struct {
+	UserID    uuid.UUID
+	PokemonID sql.NullInt32
+}
+
+func (q *Queries) ActivateUserPokemon(ctx context.Context, arg ActivateUserPokemonParams) error {
+	_, err := q.db.ExecContext(ctx, activateUserPokemon, arg.UserID, arg.PokemonID)
+	return err
+}
+
+const countUserPokemon = `-- name: CountUserPokemon :one
+SELECT COUNT(*) FROM user_pokemon WHERE user_id = $1
+`
+
+func (q *Queries) CountUserPokemon(ctx context.Context, userID uuid.UUID) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countUserPokemon, userID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const deactivateAllUserPokemon = `-- name: DeactivateAllUserPokemon :exec
+UPDATE user_pokemon
+SET is_active = false
+WHERE user_id = $1
+`
+
+func (q *Queries) DeactivateAllUserPokemon(ctx context.Context, userID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, deactivateAllUserPokemon, userID)
+	return err
+}
 
 const fetchPokemonDataById = `-- name: FetchPokemonDataById :one
 SELECT id, name, type_1, type_2, hp, attack, defense, special_attack, special_defense, speed FROM pokedex WHERE id = $1
@@ -144,5 +184,40 @@ type InsertPokemonMoveParams struct {
 
 func (q *Queries) InsertPokemonMove(ctx context.Context, arg InsertPokemonMoveParams) error {
 	_, err := q.db.ExecContext(ctx, insertPokemonMove, arg.PokemonID, arg.MoveID)
+	return err
+}
+
+const insertUserPokemon = `-- name: InsertUserPokemon :exec
+INSERT INTO user_pokemon (
+    id,
+    user_id,
+    pokemon_id,
+    nickname,
+    current_hp,
+    is_active,
+    created_at
+) VALUES (
+    $1, $2, $3, $4, $5, $6, DEFAULT
+)
+`
+
+type InsertUserPokemonParams struct {
+	ID        uuid.UUID
+	UserID    uuid.UUID
+	PokemonID sql.NullInt32
+	Nickname  sql.NullString
+	CurrentHp int32
+	IsActive  bool
+}
+
+func (q *Queries) InsertUserPokemon(ctx context.Context, arg InsertUserPokemonParams) error {
+	_, err := q.db.ExecContext(ctx, insertUserPokemon,
+		arg.ID,
+		arg.UserID,
+		arg.PokemonID,
+		arg.Nickname,
+		arg.CurrentHp,
+		arg.IsActive,
+	)
 	return err
 }
