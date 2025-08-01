@@ -44,6 +44,10 @@ func (cfg *Config) Authorize(r *http.Request) (*database.User, error) {
 	return &user, nil
 }
 
+type contextKey string
+
+const userContextKey contextKey = "user"
+
 func (cfg *Config) AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		user, err := cfg.Authorize(r)
@@ -53,7 +57,7 @@ func (cfg *Config) AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		}
 		// Optionally, set user in context for downstream handlers
 		ctx := r.Context()
-		ctx = context.WithValue(ctx, "user", user)
+		ctx = context.WithValue(ctx, userContextKey, user)
 		next(w, r.WithContext(ctx))
 	}
 }
@@ -201,15 +205,16 @@ func (cfg *Config) LogoutHandler(w http.ResponseWriter, r *http.Request) {
 // Use to test protected endpoints
 func (cfg *Config) ProtectedHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
-		return
-	}
+		user, ok := r.Context().Value(userContextKey).(*database.User)
+		if !ok || user == nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if !ok || user == nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
 
-	user, ok := r.Context().Value("user").(*database.User)
-	if !ok || user == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
+		fmt.Fprintf(w, "Hello %s, you are making a protected call!", user.Username)
 	}
-
-	fmt.Fprintf(w, "Hello %s, you are making a protected call!", user.Username)
 }
