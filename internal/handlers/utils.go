@@ -3,7 +3,9 @@ package handlers
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"log"
+	"net/http"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -24,4 +26,10 @@ func generateToken(length int) string {
 		log.Fatal("Failed to generate random bytes:", err)
 	}
 	return base64.RawURLEncoding.EncodeToString(bytes)
+}
+
+func writeJSON(w http.ResponseWriter, status int, payload interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(payload)
 }

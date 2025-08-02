@@ -254,44 +254,50 @@ func (cfg *Config) FetchPokemonMoveData(ctx context.Context, moveID int) (*MoveD
 
 // Catch pokemon
 func (cfg *Config) CatchPokemonHandler(w http.ResponseWriter, r *http.Request) {
+	// Only allow POST requests
 	if r.Method != http.MethodPost {
-		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "Invalid method"})
 		return
 	}
 
+	// Parse form data
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Bad form data", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Bad form data"})
 		return
 	}
+
 	// pokemone_identifier can be either name of ID
 	pokemon := r.PostForm.Get("pokemon_identifier")
 	if pokemon == "" {
-		http.Error(w, "pokemon_identifier is required", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "pokemon_identifier is required"})
 		return
 	}
 
 	ctx := r.Context()
-	user, ok := r.Context().Value(userContextKey).(*database.User)
+
+	// Validate user context
+	user, ok := ctx.Value(userContextKey).(*database.User)
 	if !ok || user == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
 		return
 	}
+
 	// Get pokemon ID
 	pokemonEntry, err := cfg.GetPokemon(ctx, pokemon)
 	if err != nil {
 		log.Printf("error checking for existing pokemon: %s", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
 		return
 	}
 
 	// Add pokemon to the user's collection
 	partysize, err := cfg.DB.CountUserPokemon(ctx, user.ID)
 	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
 		return
 	}
 	if partysize >= 6 {
-		http.Error(w, "You can only have at most six pokemon in your party", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "You can only have at most six pokemon in your party"})
 		return
 	}
 
@@ -305,14 +311,15 @@ func (cfg *Config) CatchPokemonHandler(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		log.Printf("error inserting user pokemon: %s", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
 		return
 	}
 
+	// Set the new pokemon as active
 	err = cfg.DB.DeactivateAllUserPokemon(ctx, user.ID)
 	if err != nil {
 		log.Printf("error deactivating user's pokemon to set new active: %s", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
 		return
 	}
 
@@ -322,18 +329,18 @@ func (cfg *Config) CatchPokemonHandler(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		log.Printf("error activating user's new pokemon: %s", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
 		return
 	}
+
+	// Return success response
 	response := map[string]interface{}{
 		"message":       "Pokemon caught successfully",
 		"pokemon_id":    pokemonEntry.ID,
 		"pokemon_name":  pokemonEntry.Name,
 		"user_username": user.Username,
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
-
+	writeJSON(w, http.StatusOK, response)
 }
 
 // Challenge pokemon

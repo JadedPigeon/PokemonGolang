@@ -65,12 +65,12 @@ func (cfg *Config) AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 func (cfg *Config) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "Invalid method"})
 		return
 	}
 
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Bad form data", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Bad form data"})
 		return
 	}
 	username := r.PostForm.Get("username")
@@ -80,17 +80,17 @@ func (cfg *Config) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	user, err := cfg.DB.GetUserByUsername(r.Context(), username)
 	if err == nil && user.ID != uuid.Nil {
 		fmt.Printf("User found: %+v\n", user)
-		http.Error(w, "User already exists", http.StatusConflict)
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "User already exists"})
 		return
 	} else if err != nil && err != sql.ErrNoRows {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		log.Printf("DB error: %v", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
 		return
 	}
 
 	hashedPassword, err := hashPassword(password)
 	if err != nil {
-		http.Error(w, "Error hashing password", http.StatusInternalServerError)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Error hashing password"})
 		return
 	}
 
@@ -99,12 +99,12 @@ func (cfg *Config) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		Username:     username,
 		PasswordHash: hashedPassword,
 	}); err != nil {
-		http.Error(w, "Error creating user", http.StatusInternalServerError)
 		log.Printf("DB error: %v", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Error creating user"})
 		return
 	}
 
-	fmt.Fprintln(w, "User registered successfully")
+	writeJSON(w, http.StatusOK, map[string]string{"message": "User registered successfully"})
 }
 
 func (cfg *Config) LoginHandler(w http.ResponseWriter, r *http.Request) {
@@ -124,12 +124,12 @@ func (cfg *Config) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	user_db, err := cfg.DB.GetUserByUsername(r.Context(), username)
 	if err != nil || user_db.ID == uuid.Nil {
 		log.Printf("DB error: %v", err)
-		http.Error(w, "Invalid login", http.StatusUnauthorized)
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Invalid login"})
 		return
 	}
 	if !checkPasswordHash(password, user_db.PasswordHash) {
 		log.Printf("Invalid password for user: %s", username)
-		http.Error(w, "Invalid login", http.StatusUnauthorized)
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Invalid login"})
 		return
 	}
 
@@ -164,11 +164,11 @@ func (cfg *Config) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		ID:           user_db.ID,
 	})
 	if err != nil {
-		http.Error(w, "Error setting user session", http.StatusInternalServerError)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Error setting user session"})
 		log.Printf("DB error: %v", err)
 	}
 
-	fmt.Fprintln(w, "Login successfully")
+	writeJSON(w, http.StatusOK, map[string]string{"message": "Login successful"})
 }
 
 func (cfg *Config) LogoutHandler(w http.ResponseWriter, r *http.Request) {
@@ -205,7 +205,7 @@ func (cfg *Config) LogoutHandler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("DB error: %v", err)
 	}
 
-	fmt.Fprintln(w, "Logged out successfully")
+	writeJSON(w, http.StatusOK, map[string]string{"message": "Logged out successfully"})
 }
 
 // Use to test protected endpoints
@@ -221,5 +221,5 @@ func (cfg *Config) ProtectedHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Fprintf(w, "Hello %s, you are making a protected call!", user.Username)
+	writeJSON(w, http.StatusOK, map[string]string{"message": fmt.Sprintf("Hello %s, you are making a protected call!", user.Username)})
 }
