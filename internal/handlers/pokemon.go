@@ -296,6 +296,7 @@ func (cfg *Config) CatchPokemonHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = cfg.DB.InsertUserPokemon(ctx, database.InsertUserPokemonParams{
+		ID:        uuid.New(),
 		UserID:    user.ID,
 		PokemonID: sql.NullInt32{Valid: true, Int32: int32(pokemonEntry.ID)},
 		Nickname:  sql.NullString{Valid: false},
@@ -324,8 +325,15 @@ func (cfg *Config) CatchPokemonHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
-	fmt.Printf("User %s caught pokemon %s (ID: %d)\n", user.Username, pokemonEntry.Name, pokemonEntry.ID)
-	w.WriteHeader(http.StatusOK)
+	response := map[string]interface{}{
+		"message":       "Pokemon caught successfully",
+		"pokemon_id":    pokemonEntry.ID,
+		"pokemon_name":  pokemonEntry.Name,
+		"user_username": user.Username,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+
 }
 
 // Challenge pokemon
@@ -397,6 +405,12 @@ func (cfg *Config) ChooseChallengePokemonHandler(w http.ResponseWriter, r *http.
 		return
 	}
 
-	fmt.Printf("User %s has challenged %s (ID: %d) to a fight\n", user.Username, pokemonEntry.Name, pokemonEntry.ID)
-	w.WriteHeader(http.StatusOK)
+	response := map[string]interface{}{
+		"message":       "Challenge initiated successfully",
+		"pokemon_id":    pokemonEntry.ID,
+		"pokemon_name":  pokemonEntry.Name,
+		"user_username": user.Username,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
