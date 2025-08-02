@@ -46,12 +46,13 @@ type PokemonMove struct {
 }
 
 type User struct {
-	ID           uuid.UUID
-	Username     string
-	PasswordHash string
-	CreatedAt    time.Time
-	SessionToken sql.NullString
-	CsrfToken    sql.NullString
+	ID                 uuid.UUID
+	Username           string
+	PasswordHash       string
+	CreatedAt          time.Time
+	SessionToken       sql.NullString
+	CsrfToken          sql.NullString
+	ChallengePokemonID uuid.NullUUID
 }
 
 type UserPokemon struct {

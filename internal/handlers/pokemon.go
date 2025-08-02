@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/JadedPigeon/pokemongolang/internal/database"
+	"github.com/google/uuid"
 )
 
 const pokeapi = "https://pokeapi.co/api/v2/pokemon/"
@@ -324,5 +325,78 @@ func (cfg *Config) CatchPokemonHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fmt.Printf("User %s caught pokemon %s (ID: %d)\n", user.Username, pokemonEntry.Name, pokemonEntry.ID)
+	w.WriteHeader(http.StatusOK)
+}
+
+// Challenge pokemon
+func (cfg *Config) ChooseChallengePokemonHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad form data", http.StatusBadRequest)
+		return
+	}
+	// pokemone_identifier can be either name of ID
+	pokemon := r.PostForm.Get("pokemon_identifier")
+	if pokemon == "" {
+		http.Error(w, "pokemon_identifier is required", http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+	user, ok := r.Context().Value(userContextKey).(*database.User)
+	if !ok || user == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	// Get pokemon ID
+	pokemonEntry, err := cfg.GetPokemon(ctx, pokemon)
+	if err != nil {
+		log.Printf("error checking for existing pokemon: %s", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if err != nil {
+		log.Printf("Could not remove previous challenge pokemon for user: %s", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Remove previous challenge pokemon if exists
+	if user.ChallengePokemonID.Valid {
+		err := cfg.DB.DeleteChallengePokemon(ctx, user.ChallengePokemonID.UUID)
+		if err != nil {
+			log.Printf("Failed to delete previous challenge: %v", err)
+			return
+		}
+	}
+
+	challengePokemonId := uuid.New()
+	err = cfg.DB.InsertChallengePokemon(ctx, database.InsertChallengePokemonParams{
+		ID:        challengePokemonId,
+		PokemonID: sql.NullInt32{Valid: true, Int32: int32(pokemonEntry.ID)},
+		CurrentHp: int32(pokemonEntry.Hp),
+	})
+	if err != nil {
+		log.Printf("error inserting challenge pokemon: %s", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	err = cfg.DB.SetUserChallengePokemon(ctx, database.SetUserChallengePokemonParams{
+		ChallengePokemonID: uuid.NullUUID{UUID: challengePokemonId, Valid: true},
+		ID:                 user.ID,
+	})
+	if err != nil {
+		log.Printf("Could not set challenge pokemon for user: %s", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Printf("User %s has challenged %s (ID: %d) to a fight\n", user.Username, pokemonEntry.Name, pokemonEntry.ID)
 	w.WriteHeader(http.StatusOK)
 }

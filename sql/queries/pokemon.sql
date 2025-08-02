@@ -47,3 +47,29 @@ WHERE user_id = $1;
 UPDATE user_pokemon
 SET is_active = true
 WHERE user_id = $1 AND pokemon_id = $2;
+
+-- name: InsertChallengePokemon :exec
+INSERT INTO challenger_pokemon (
+    id,
+    pokemon_id,
+    current_hp,
+    created_at
+) VALUES (
+    $1, $2, $3, DEFAULT
+);
+
+-- name: SetUserChallengePokemon :exec
+UPDATE users
+SET challenge_pokemon_id = $1
+WHERE id = $2;
+
+-- name: GetUserChallengePokemon :one
+SELECT cp.*
+FROM users u
+JOIN challenger_pokemon cp ON u.challenge_pokemon_id = cp.id
+WHERE u.id = $1;
+
+-- name: DeleteChallengePokemon :exec
+DELETE FROM challenger_pokemon
+WHERE id = $1;
+

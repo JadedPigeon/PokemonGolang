@@ -35,7 +35,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) error {
 }
 
 const getUserBySessionToken = `-- name: GetUserBySessionToken :one
-SELECT id, username, password_hash, created_at, session_token, csrf_token FROM users WHERE session_token = $1
+SELECT id, username, password_hash, created_at, session_token, csrf_token, challenge_pokemon_id FROM users WHERE session_token = $1
 `
 
 func (q *Queries) GetUserBySessionToken(ctx context.Context, sessionToken sql.NullString) (User, error) {
@@ -48,12 +48,13 @@ func (q *Queries) GetUserBySessionToken(ctx context.Context, sessionToken sql.Nu
 		&i.CreatedAt,
 		&i.SessionToken,
 		&i.CsrfToken,
+		&i.ChallengePokemonID,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, password_hash, created_at, session_token, csrf_token FROM users WHERE username = $1
+SELECT id, username, password_hash, created_at, session_token, csrf_token, challenge_pokemon_id FROM users WHERE username = $1
 `
 
 func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User, error) {
@@ -66,6 +67,7 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 		&i.CreatedAt,
 		&i.SessionToken,
 		&i.CsrfToken,
+		&i.ChallengePokemonID,
 	)
 	return i, err
 }

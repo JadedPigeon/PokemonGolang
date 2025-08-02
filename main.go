@@ -32,12 +32,12 @@ func main() {
 	// 	log.Println("Pokemon inserted/skipped successfully")
 	// }
 
-	//Four main endpoints to start with:
 	http.HandleFunc("/register", cfg.RegisterHandler)
 	http.HandleFunc("/login", cfg.LoginHandler)
 	http.HandleFunc("/logout", cfg.AuthMiddleware(cfg.LogoutHandler))
 	http.HandleFunc("/protected", cfg.AuthMiddleware(cfg.ProtectedHandler))
 	http.HandleFunc("/catch", cfg.AuthMiddleware(cfg.CatchPokemonHandler))
+	http.HandleFunc("/challenge", cfg.AuthMiddleware(cfg.ChooseChallengePokemonHandler))
 	log.Fatal(http.ListenAndServe(":8080", nil))
 
 }

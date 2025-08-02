@@ -50,6 +50,16 @@ func (q *Queries) DeactivateAllUserPokemon(ctx context.Context, userID uuid.UUID
 	return err
 }
 
+const deleteChallengePokemon = `-- name: DeleteChallengePokemon :exec
+DELETE FROM challenger_pokemon
+WHERE id = $1
+`
+
+func (q *Queries) DeleteChallengePokemon(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, deleteChallengePokemon, id)
+	return err
+}
+
 const fetchPokemonDataById = `-- name: FetchPokemonDataById :one
 SELECT id, name, type_1, type_2, hp, attack, defense, special_attack, special_defense, speed FROM pokedex WHERE id = $1
 `
@@ -109,6 +119,47 @@ func (q *Queries) GetMoveByID(ctx context.Context, moveID int32) (Move, error) {
 		&i.Description,
 	)
 	return i, err
+}
+
+const getUserChallengePokemon = `-- name: GetUserChallengePokemon :one
+SELECT cp.id, cp.pokemon_id, cp.current_hp, cp.created_at
+FROM users u
+JOIN challenger_pokemon cp ON u.challenge_pokemon_id = cp.id
+WHERE u.id = $1
+`
+
+func (q *Queries) GetUserChallengePokemon(ctx context.Context, id uuid.UUID) (ChallengerPokemon, error) {
+	row := q.db.QueryRowContext(ctx, getUserChallengePokemon, id)
+	var i ChallengerPokemon
+	err := row.Scan(
+		&i.ID,
+		&i.PokemonID,
+		&i.CurrentHp,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const insertChallengePokemon = `-- name: InsertChallengePokemon :exec
+INSERT INTO challenger_pokemon (
+    id,
+    pokemon_id,
+    current_hp,
+    created_at
+) VALUES (
+    $1, $2, $3, DEFAULT
+)
+`
+
+type InsertChallengePokemonParams struct {
+	ID        uuid.UUID
+	PokemonID sql.NullInt32
+	CurrentHp int32
+}
+
+func (q *Queries) InsertChallengePokemon(ctx context.Context, arg InsertChallengePokemonParams) error {
+	_, err := q.db.ExecContext(ctx, insertChallengePokemon, arg.ID, arg.PokemonID, arg.CurrentHp)
+	return err
 }
 
 const insertMove = `-- name: InsertMove :exec
@@ -219,5 +270,21 @@ func (q *Queries) InsertUserPokemon(ctx context.Context, arg InsertUserPokemonPa
 		arg.CurrentHp,
 		arg.IsActive,
 	)
+	return err
+}
+
+const setUserChallengePokemon = `-- name: SetUserChallengePokemon :exec
+UPDATE users
+SET challenge_pokemon_id = $1
+WHERE id = $2
+`
+
+type SetUserChallengePokemonParams struct {
+	ChallengePokemonID uuid.NullUUID
+	ID                 uuid.UUID
+}
+
+func (q *Queries) SetUserChallengePokemon(ctx context.Context, arg SetUserChallengePokemonParams) error {
+	_, err := q.db.ExecContext(ctx, setUserChallengePokemon, arg.ChallengePokemonID, arg.ID)
 	return err
 }
