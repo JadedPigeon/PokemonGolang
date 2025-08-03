@@ -428,6 +428,7 @@ type PokedexResponse struct {
 	SpecialAttack  int32  `json:"SpecialAttack"`
 	SpecialDefense int32  `json:"SpecialDefense"`
 	Speed          int32  `json:"Speed"`
+	Active         bool   `json:"Active"`
 }
 
 func (cfg *Config) GetUserPokemonHandler(w http.ResponseWriter, r *http.Request) {
@@ -466,6 +467,7 @@ func (cfg *Config) GetUserPokemonHandler(w http.ResponseWriter, r *http.Request)
 			SpecialAttack:  p.SpecialAttack,
 			SpecialDefense: p.SpecialDefense,
 			Speed:          p.Speed,
+			Active:         p.IsActive,
 		})
 	}
 

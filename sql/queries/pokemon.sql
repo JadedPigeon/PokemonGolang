@@ -74,7 +74,7 @@ DELETE FROM challenger_pokemon
 WHERE id = $1;
 
 -- name: GetUserPokemon :many
-SELECT p.*
+SELECT p.*, up.is_active
 FROM user_pokemon up
 JOIN pokedex p ON up.pokemon_id = p.id
 WHERE up.user_id = $1;

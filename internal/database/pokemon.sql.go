@@ -141,21 +141,35 @@ func (q *Queries) GetUserChallengePokemon(ctx context.Context, id uuid.UUID) (Ch
 }
 
 const getUserPokemon = `-- name: GetUserPokemon :many
-SELECT p.id, p.name, p.type_1, p.type_2, p.hp, p.attack, p.defense, p.special_attack, p.special_defense, p.speed
+SELECT p.id, p.name, p.type_1, p.type_2, p.hp, p.attack, p.defense, p.special_attack, p.special_defense, p.speed, up.is_active
 FROM user_pokemon up
 JOIN pokedex p ON up.pokemon_id = p.id
 WHERE up.user_id = $1
 `
 
-func (q *Queries) GetUserPokemon(ctx context.Context, userID uuid.UUID) ([]Pokedex, error) {
+type GetUserPokemonRow struct {
+	ID             int32
+	Name           string
+	Type1          string
+	Type2          sql.NullString
+	Hp             int32
+	Attack         int32
+	Defense        int32
+	SpecialAttack  int32
+	SpecialDefense int32
+	Speed          int32
+	IsActive       bool
+}
+
+func (q *Queries) GetUserPokemon(ctx context.Context, userID uuid.UUID) ([]GetUserPokemonRow, error) {
 	rows, err := q.db.QueryContext(ctx, getUserPokemon, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Pokedex
+	var items []GetUserPokemonRow
 	for rows.Next() {
-		var i Pokedex
+		var i GetUserPokemonRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
@@ -167,6 +181,7 @@ func (q *Queries) GetUserPokemon(ctx context.Context, userID uuid.UUID) ([]Poked
 			&i.SpecialAttack,
 			&i.SpecialDefense,
 			&i.Speed,
+			&i.IsActive,
 		); err != nil {
 			return nil, err
 		}
