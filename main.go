@@ -38,6 +38,7 @@ func main() {
 	http.HandleFunc("/protected", cfg.AuthMiddleware(cfg.ProtectedHandler))
 	http.HandleFunc("/catch", cfg.AuthMiddleware(cfg.CatchPokemonHandler))
 	http.HandleFunc("/challenge", cfg.AuthMiddleware(cfg.ChooseChallengePokemonHandler))
+	http.HandleFunc("/GetUserPokemon", cfg.AuthMiddleware(cfg.GetUserPokemonHandler))
 	log.Fatal(http.ListenAndServe(":8080", nil))
 
 }

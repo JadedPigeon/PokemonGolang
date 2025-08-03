@@ -73,3 +73,8 @@ WHERE u.id = $1;
 DELETE FROM challenger_pokemon
 WHERE id = $1;
 
+-- name: GetUserPokemon :many
+SELECT p.*
+FROM user_pokemon up
+JOIN pokedex p ON up.pokemon_id = p.id
+WHERE up.user_id = $1;

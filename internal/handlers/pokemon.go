@@ -415,3 +415,59 @@ func (cfg *Config) ChooseChallengePokemonHandler(w http.ResponseWriter, r *http.
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
+
+// Needed Responst struct for cleaner JSON response, ie issues with displaying type 2 since they are sql.NullString
+type PokedexResponse struct {
+	ID             int32  `json:"ID"`
+	Name           string `json:"Name"`
+	Type1          string `json:"Type1"`
+	Type2          string `json:"Type2"`
+	Hp             int32  `json:"Hp"`
+	Attack         int32  `json:"Attack"`
+	Defense        int32  `json:"Defense"`
+	SpecialAttack  int32  `json:"SpecialAttack"`
+	SpecialDefense int32  `json:"SpecialDefense"`
+	Speed          int32  `json:"Speed"`
+}
+
+func (cfg *Config) GetUserPokemonHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
+		return
+	}
+
+	ctx := r.Context()
+	user, ok := ctx.Value(userContextKey).(*database.User)
+	if !ok || user == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+		return
+	}
+
+	pokemonList, err := cfg.DB.GetUserPokemon(r.Context(), user.ID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve Pokémon"})
+		return
+	}
+
+	var response []PokedexResponse
+	for _, p := range pokemonList {
+		type2 := ""
+		if p.Type2.Valid {
+			type2 = p.Type2.String
+		}
+		response = append(response, PokedexResponse{
+			ID:             p.ID,
+			Name:           p.Name,
+			Type1:          p.Type1,
+			Type2:          type2,
+			Hp:             p.Hp,
+			Attack:         p.Attack,
+			Defense:        p.Defense,
+			SpecialAttack:  p.SpecialAttack,
+			SpecialDefense: p.SpecialDefense,
+			Speed:          p.Speed,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, response)
+}

@@ -140,6 +140,47 @@ func (q *Queries) GetUserChallengePokemon(ctx context.Context, id uuid.UUID) (Ch
 	return i, err
 }
 
+const getUserPokemon = `-- name: GetUserPokemon :many
+SELECT p.id, p.name, p.type_1, p.type_2, p.hp, p.attack, p.defense, p.special_attack, p.special_defense, p.speed
+FROM user_pokemon up
+JOIN pokedex p ON up.pokemon_id = p.id
+WHERE up.user_id = $1
+`
+
+func (q *Queries) GetUserPokemon(ctx context.Context, userID uuid.UUID) ([]Pokedex, error) {
+	rows, err := q.db.QueryContext(ctx, getUserPokemon, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Pokedex
+	for rows.Next() {
+		var i Pokedex
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Type1,
+			&i.Type2,
+			&i.Hp,
+			&i.Attack,
+			&i.Defense,
+			&i.SpecialAttack,
+			&i.SpecialDefense,
+			&i.Speed,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const insertChallengePokemon = `-- name: InsertChallengePokemon :exec
 INSERT INTO challenger_pokemon (
     id,

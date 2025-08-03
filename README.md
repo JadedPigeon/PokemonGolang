@@ -1,6 +1,5 @@
 # Project in progress
 
 ## Todo/Fixes
-- Make sure everything is a json response
-- automate postman csrf tokens for easier testing
+- Make catch call faster
 - user cannot catch more than one of same pokemon
