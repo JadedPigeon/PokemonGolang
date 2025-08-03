@@ -375,12 +375,6 @@ func (cfg *Config) ChooseChallengePokemonHandler(w http.ResponseWriter, r *http.
 		return
 	}
 
-	if err != nil {
-		log.Printf("Could not remove previous challenge pokemon for user: %s", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
-
 	// Remove previous challenge pokemon if exists
 	if user.ChallengePokemonID.Valid {
 		err := cfg.DB.DeleteChallengePokemon(ctx, user.ChallengePokemonID.UUID)

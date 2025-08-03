@@ -53,7 +53,7 @@ func (cfg *Config) AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		user, err := cfg.Authorize(r)
 		if err != nil {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
 			return
 		}
 		// Optionally, set user in context for downstream handlers
