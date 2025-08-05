@@ -343,6 +343,7 @@ func (cfg *Config) CatchPokemonHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, response)
 }
 
+// comment
 // Challenge pokemon
 func (cfg *Config) ChooseChallengePokemonHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
