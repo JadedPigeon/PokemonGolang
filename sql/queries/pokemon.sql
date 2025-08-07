@@ -1,8 +1,8 @@
 -- name: InsertPokedex :exec
 INSERT INTO pokedex (
-    id, name, type_1, type_2, hp, attack, defense, special_attack, special_defense, speed
+    id, name, type_1, type_2, hp, attack, defense, special_attack, special_defense, speed, image_url
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
 );
 
 -- name: FetchPokemonDataById :one

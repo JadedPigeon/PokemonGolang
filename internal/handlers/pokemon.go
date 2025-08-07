@@ -37,6 +37,13 @@ type PokeAPIResponse struct {
 			URL  string `json:"url"`
 		} `json:"move"`
 	} `json:"moves"`
+	Sprites struct {
+		Other struct {
+			OfficialArtwork struct {
+				FrontDefault string `json:"front_default"`
+			} `json:"official-artwork"`
+		} `json:"other"`
+	} `json:"sprites"`
 }
 
 // Check if poksemon exists in db, if not get it, then return pokemon data
@@ -123,6 +130,7 @@ func (cfg *Config) FetchPokemonData(ctx context.Context, identifier string) erro
 		SpecialAttack:  stats["special-attack"],
 		SpecialDefense: stats["special-defense"],
 		Speed:          stats["speed"],
+		ImageUrl:       sql.NullString{String: data.Sprites.Other.OfficialArtwork.FrontDefault, Valid: true},
 	})
 	// Select up to 4 moves, prioritizing same-type moves
 	pokeTypes := []string{strings.ToLower(data.Types[0].Type.Name)}
@@ -429,6 +437,7 @@ type PokedexResponse struct {
 	SpecialDefense int32  `json:"SpecialDefense"`
 	Speed          int32  `json:"Speed"`
 	Active         bool   `json:"Active"`
+	ImageUrl       string `json:"ImageUrl"` // Changed to string for easier JSON handling
 }
 
 func (cfg *Config) GetUserPokemonHandler(w http.ResponseWriter, r *http.Request) {
@@ -468,6 +477,7 @@ func (cfg *Config) GetUserPokemonHandler(w http.ResponseWriter, r *http.Request)
 			SpecialDefense: p.SpecialDefense,
 			Speed:          p.Speed,
 			Active:         p.IsActive,
+			ImageUrl:       p.ImageUrl.String, // Assuming ImageUrl is always valid
 		})
 	}
 

@@ -61,7 +61,7 @@ func (q *Queries) DeleteChallengePokemon(ctx context.Context, id uuid.UUID) erro
 }
 
 const fetchPokemonDataById = `-- name: FetchPokemonDataById :one
-SELECT id, name, type_1, type_2, hp, attack, defense, special_attack, special_defense, speed FROM pokedex WHERE id = $1
+SELECT id, name, type_1, type_2, hp, attack, defense, special_attack, special_defense, speed, image_url FROM pokedex WHERE id = $1
 `
 
 func (q *Queries) FetchPokemonDataById(ctx context.Context, id int32) (Pokedex, error) {
@@ -78,12 +78,13 @@ func (q *Queries) FetchPokemonDataById(ctx context.Context, id int32) (Pokedex, 
 		&i.SpecialAttack,
 		&i.SpecialDefense,
 		&i.Speed,
+		&i.ImageUrl,
 	)
 	return i, err
 }
 
 const fetchPokemonDataByName = `-- name: FetchPokemonDataByName :one
-SELECT id, name, type_1, type_2, hp, attack, defense, special_attack, special_defense, speed FROM pokedex WHERE LOWER(name) = LOWER($1)
+SELECT id, name, type_1, type_2, hp, attack, defense, special_attack, special_defense, speed, image_url FROM pokedex WHERE LOWER(name) = LOWER($1)
 `
 
 func (q *Queries) FetchPokemonDataByName(ctx context.Context, lower string) (Pokedex, error) {
@@ -100,6 +101,7 @@ func (q *Queries) FetchPokemonDataByName(ctx context.Context, lower string) (Pok
 		&i.SpecialAttack,
 		&i.SpecialDefense,
 		&i.Speed,
+		&i.ImageUrl,
 	)
 	return i, err
 }
@@ -141,7 +143,7 @@ func (q *Queries) GetUserChallengePokemon(ctx context.Context, id uuid.UUID) (Ch
 }
 
 const getUserPokemon = `-- name: GetUserPokemon :many
-SELECT p.id, p.name, p.type_1, p.type_2, p.hp, p.attack, p.defense, p.special_attack, p.special_defense, p.speed, up.is_active
+SELECT p.id, p.name, p.type_1, p.type_2, p.hp, p.attack, p.defense, p.special_attack, p.special_defense, p.speed, p.image_url, up.is_active
 FROM user_pokemon up
 JOIN pokedex p ON up.pokemon_id = p.id
 WHERE up.user_id = $1
@@ -158,6 +160,7 @@ type GetUserPokemonRow struct {
 	SpecialAttack  int32
 	SpecialDefense int32
 	Speed          int32
+	ImageUrl       sql.NullString
 	IsActive       bool
 }
 
@@ -181,6 +184,7 @@ func (q *Queries) GetUserPokemon(ctx context.Context, userID uuid.UUID) ([]GetUs
 			&i.SpecialAttack,
 			&i.SpecialDefense,
 			&i.Speed,
+			&i.ImageUrl,
 			&i.IsActive,
 		); err != nil {
 			return nil, err
@@ -244,9 +248,9 @@ func (q *Queries) InsertMove(ctx context.Context, arg InsertMoveParams) error {
 
 const insertPokedex = `-- name: InsertPokedex :exec
 INSERT INTO pokedex (
-    id, name, type_1, type_2, hp, attack, defense, special_attack, special_defense, speed
+    id, name, type_1, type_2, hp, attack, defense, special_attack, special_defense, speed, image_url
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
 )
 `
 
@@ -261,6 +265,7 @@ type InsertPokedexParams struct {
 	SpecialAttack  int32
 	SpecialDefense int32
 	Speed          int32
+	ImageUrl       sql.NullString
 }
 
 func (q *Queries) InsertPokedex(ctx context.Context, arg InsertPokedexParams) error {
@@ -275,6 +280,7 @@ func (q *Queries) InsertPokedex(ctx context.Context, arg InsertPokedexParams) er
 		arg.SpecialAttack,
 		arg.SpecialDefense,
 		arg.Speed,
+		arg.ImageUrl,
 	)
 	return err
 }

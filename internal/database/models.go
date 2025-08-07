@@ -37,6 +37,7 @@ type Pokedex struct {
 	SpecialAttack  int32
 	SpecialDefense int32
 	Speed          int32
+	ImageUrl       sql.NullString
 }
 
 type PokemonMove struct {
