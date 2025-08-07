@@ -343,7 +343,6 @@ func (cfg *Config) CatchPokemonHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, response)
 }
 
-// comment 2
 // Challenge pokemon
 func (cfg *Config) ChooseChallengePokemonHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -473,4 +472,63 @@ func (cfg *Config) GetUserPokemonHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	writeJSON(w, http.StatusOK, response)
+}
+
+func (cfg *Config) ChangeActivePokemonHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "Invalid method"})
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Bad form data"})
+		return
+	}
+
+	// pokemone_identifier is the ID of the pokemon
+	pokemonIDStr := r.PostForm.Get("pokemon_identifier")
+	if pokemonIDStr == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "pokemon_identifier is required"})
+		return
+	}
+
+	pokemonIDInt, err := strconv.Atoi(pokemonIDStr)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "pokemon_identifier must be a valid integer"})
+		return
+	}
+	pokemonID := int32(pokemonIDInt)
+
+	ctx := r.Context()
+	user, ok := ctx.Value(userContextKey).(*database.User)
+	if !ok || user == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+		return
+	}
+
+	// deactivate all user pokemon
+	err = cfg.DB.DeactivateAllUserPokemon(ctx, user.ID)
+	if err != nil {
+		log.Printf("error deactivating user's pokemon to set new active: %s", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
+		return
+	}
+
+	// activate new pokemon
+	err = cfg.DB.ActivateUserPokemon(ctx, database.ActivateUserPokemonParams{
+		UserID:    user.ID,
+		PokemonID: sql.NullInt32{Valid: true, Int32: pokemonID},
+	})
+	if err != nil {
+		log.Printf("error activating user's new pokemon: %s", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
+		return
+	}
+
+	// success response
+	writeJSON(w, http.StatusOK, map[string]string{
+		"message":       "Active pokemon changed successfully",
+		"pokemon_id":    pokemonIDStr,
+		"user_username": user.Username,
+	})
 }
