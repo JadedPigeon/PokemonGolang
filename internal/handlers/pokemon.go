@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/JadedPigeon/pokemongolang/internal/database"
+	"github.com/JadedPigeon/pokemongolang/internal/describe"
 	"github.com/google/uuid"
 )
 
@@ -958,17 +959,18 @@ func (cfg *Config) FightHandler(w http.ResponseWriter, r *http.Request) {
 
 	type fightDescResp struct {
 		User struct {
-			Name        string  `json:"name"`
-			MoveUsed    moveDTO `json:"move_used"`
-			Description string  `json:"description"`
+			Name              string  `json:"name"`
+			MoveUsed          moveDTO `json:"move_used"`
+			ActionDescription string  `json:"action_description"`
 		} `json:"user"`
 		Challenger struct {
-			Name        string  `json:"name"`
-			MoveUsed    moveDTO `json:"move_used"`
-			Description string  `json:"description"`
+			Name              string  `json:"name"`
+			MoveUsed          moveDTO `json:"move_used"`
+			ActionDescription string  `json:"action_description"`
 		} `json:"challenger"`
 	}
 
+	// helper: sql.NullString -> *string
 	descPtr := func(ns sql.NullString) *string {
 		if ns.Valid {
 			return &ns.String
@@ -976,6 +978,36 @@ func (cfg *Config) FightHandler(w http.ResponseWriter, r *http.Request) {
 		return nil
 	}
 
+	// Build user context for describer)
+	userAction := describe.ActionContext{}
+	userAction.Source.Name = userPokemon.Name
+	userAction.Target.Name = challengePokemonDetails.Name
+	userAction.Move.ID = userMove.MoveID
+	userAction.Move.Name = userMove.Name
+	userAction.Move.Type = userMove.Type
+	userAction.Move.Power = userMove.Power
+	if userMove.Description.Valid {
+		userAction.Move.Description = userMove.Description.String
+	}
+
+	// Build challenger context for describer
+	challengerAction := describe.ActionContext{}
+	challengerAction.Source.Name = challengePokemonDetails.Name
+	challengerAction.Target.Name = userPokemon.Name
+	challengerAction.Move.ID = challengerMove.MoveID
+	challengerAction.Move.Name = challengerMove.Name
+	challengerAction.Move.Type = challengerMove.Type
+	challengerAction.Move.Power = challengerMove.Power
+	if challengerMove.Description.Valid {
+		challengerAction.Move.Description = challengerMove.Description.String
+	}
+
+	// ===== Generate lines via Plain describer
+	plain := describe.Plain{}
+	userLine, _ := plain.DescribeAction(ctx, userAction)
+	challLine, _ := plain.DescribeAction(ctx, challengerAction)
+
+	// ===== Build final response
 	var resp fightDescResp
 
 	// user section
@@ -987,7 +1019,7 @@ func (cfg *Config) FightHandler(w http.ResponseWriter, r *http.Request) {
 		Power:       userMove.Power,
 		Description: descPtr(userMove.Description),
 	}
-	resp.User.Description = fmt.Sprintf("%s used %s!", userPokemon.Name, userMove.Name)
+	resp.User.ActionDescription = userLine
 
 	// challenger section
 	resp.Challenger.Name = challengePokemonDetails.Name
@@ -998,7 +1030,7 @@ func (cfg *Config) FightHandler(w http.ResponseWriter, r *http.Request) {
 		Power:       challengerMove.Power,
 		Description: descPtr(challengerMove.Description),
 	}
-	resp.Challenger.Description = fmt.Sprintf("%s used %s!", challengePokemonDetails.Name, challengerMove.Name)
+	resp.Challenger.ActionDescription = challLine
 
 	writeJSON(w, http.StatusOK, resp)
 
