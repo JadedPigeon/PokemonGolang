@@ -43,10 +43,11 @@ UPDATE user_pokemon
 SET is_active = false
 WHERE user_id = $1;
 
--- name: ActivateUserPokemon :exec
+-- name: ActivateUserPokemon :one
 UPDATE user_pokemon
-SET is_active = true
-WHERE user_id = $1 AND pokemon_id = $2;
+SET is_active = TRUE
+WHERE user_id = $1 AND pokemon_id = $2
+RETURNING id;
 
 -- name: InsertChallengePokemon :exec
 INSERT INTO challenger_pokemon (

@@ -12,10 +12,11 @@ import (
 	"github.com/google/uuid"
 )
 
-const activateUserPokemon = `-- name: ActivateUserPokemon :exec
+const activateUserPokemon = `-- name: ActivateUserPokemon :one
 UPDATE user_pokemon
-SET is_active = true
+SET is_active = TRUE
 WHERE user_id = $1 AND pokemon_id = $2
+RETURNING id
 `
 
 type ActivateUserPokemonParams struct {
@@ -23,9 +24,11 @@ type ActivateUserPokemonParams struct {
 	PokemonID sql.NullInt32
 }
 
-func (q *Queries) ActivateUserPokemon(ctx context.Context, arg ActivateUserPokemonParams) error {
-	_, err := q.db.ExecContext(ctx, activateUserPokemon, arg.UserID, arg.PokemonID)
-	return err
+func (q *Queries) ActivateUserPokemon(ctx context.Context, arg ActivateUserPokemonParams) (uuid.UUID, error) {
+	row := q.db.QueryRowContext(ctx, activateUserPokemon, arg.UserID, arg.PokemonID)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const countUserPokemon = `-- name: CountUserPokemon :one

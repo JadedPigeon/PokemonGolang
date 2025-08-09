@@ -46,7 +46,7 @@ type PokeAPIResponse struct {
 	} `json:"sprites"`
 }
 
-// Check if poksemon exists in db, if not get it, then return pokemon data
+// Check if pokemon exists in db, if not get it, then return pokemon data
 func (cfg *Config) GetPokemon(ctx context.Context, identifier string) (*database.Pokedex, error) {
 	var (
 		pokedexEntry database.Pokedex
@@ -132,6 +132,10 @@ func (cfg *Config) FetchPokemonData(ctx context.Context, identifier string) erro
 		Speed:          stats["speed"],
 		ImageUrl:       sql.NullString{String: data.Sprites.Other.OfficialArtwork.FrontDefault, Valid: true},
 	})
+	if err != nil {
+		return fmt.Errorf("error inserting pokemon into db: %w", err)
+	}
+
 	// Select up to 4 moves, prioritizing same-type moves
 	pokeTypes := []string{strings.ToLower(data.Types[0].Type.Name)}
 	if type2.Valid {
@@ -225,8 +229,11 @@ func getLatestEnglishDescription(entries []struct {
 func (cfg *Config) FetchPokemonMoveData(ctx context.Context, moveID int) (*MoveDetail, error) {
 	moveURL := fmt.Sprintf("https://pokeapi.co/api/v2/move/%d/", moveID)
 	resp, err := http.Get(moveURL)
-	if err != nil || resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to fetch move from API: %w", err)
+	if err != nil {
+		return nil, fmt.Errorf("fetch move: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("fetch move: status %d for %s", resp.StatusCode, moveURL)
 	}
 	defer resp.Body.Close()
 
@@ -274,7 +281,7 @@ func (cfg *Config) CatchPokemonHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// pokemone_identifier can be either name of ID
+	// pokemon_identifier can be either name of ID
 	pokemon := r.PostForm.Get("pokemon_identifier")
 	if pokemon == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "pokemon_identifier is required"})
@@ -331,12 +338,16 @@ func (cfg *Config) CatchPokemonHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = cfg.DB.ActivateUserPokemon(ctx, database.ActivateUserPokemonParams{
+	_, err = cfg.DB.ActivateUserPokemon(ctx, database.ActivateUserPokemonParams{
 		UserID:    user.ID,
 		PokemonID: sql.NullInt32{Valid: true, Int32: int32(pokemonEntry.ID)},
 	})
 	if err != nil {
-		log.Printf("error activating user's new pokemon: %s", err)
+		if err == sql.ErrNoRows {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "pokemon not owned by user"})
+			return
+		}
+		log.Printf("activate failed: %v", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
 		return
 	}
@@ -354,77 +365,78 @@ func (cfg *Config) CatchPokemonHandler(w http.ResponseWriter, r *http.Request) {
 // Challenge pokemon
 func (cfg *Config) ChooseChallengePokemonHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "Invalid method"})
 		return
 	}
 
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Bad form data", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Bad form data"})
 		return
 	}
-	// pokemone_identifier can be either name of ID
+
+	// pokemon_identifier can be either name or ID
 	pokemon := r.PostForm.Get("pokemon_identifier")
 	if pokemon == "" {
-		http.Error(w, "pokemon_identifier is required", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "pokemon_identifier is required"})
 		return
 	}
 
 	ctx := r.Context()
-	user, ok := r.Context().Value(userContextKey).(*database.User)
+	user, ok := ctx.Value(userContextKey).(*database.User)
 	if !ok || user == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
 		return
 	}
-	// Get pokemon ID
+
+	// Get pokemon entry
 	pokemonEntry, err := cfg.GetPokemon(ctx, pokemon)
 	if err != nil {
 		log.Printf("error checking for existing pokemon: %s", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
 		return
 	}
 
 	// Remove previous challenge pokemon if exists
 	if user.ChallengePokemonID.Valid {
-		err := cfg.DB.DeleteChallengePokemon(ctx, user.ChallengePokemonID.UUID)
-		if err != nil {
+		if err := cfg.DB.DeleteChallengePokemon(ctx, user.ChallengePokemonID.UUID); err != nil {
 			log.Printf("Failed to delete previous challenge: %v", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
 			return
 		}
 	}
 
-	challengePokemonId := uuid.New()
-	err = cfg.DB.InsertChallengePokemon(ctx, database.InsertChallengePokemonParams{
-		ID:        challengePokemonId,
+	// Insert new challenge pokemon
+	challengePokemonID := uuid.New()
+	if err := cfg.DB.InsertChallengePokemon(ctx, database.InsertChallengePokemonParams{
+		ID:        challengePokemonID,
 		PokemonID: sql.NullInt32{Valid: true, Int32: int32(pokemonEntry.ID)},
 		CurrentHp: int32(pokemonEntry.Hp),
-	})
-	if err != nil {
+	}); err != nil {
 		log.Printf("error inserting challenge pokemon: %s", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
 		return
 	}
 
-	err = cfg.DB.SetUserChallengePokemon(ctx, database.SetUserChallengePokemonParams{
-		ChallengePokemonID: uuid.NullUUID{UUID: challengePokemonId, Valid: true},
+	// Link challenge pokemon to user
+	if err := cfg.DB.SetUserChallengePokemon(ctx, database.SetUserChallengePokemonParams{
+		ChallengePokemonID: uuid.NullUUID{UUID: challengePokemonID, Valid: true},
 		ID:                 user.ID,
-	})
-	if err != nil {
+	}); err != nil {
 		log.Printf("Could not set challenge pokemon for user: %s", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
 		return
 	}
 
-	response := map[string]interface{}{
+	// Success response
+	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"message":       "Challenge initiated successfully",
 		"pokemon_id":    pokemonEntry.ID,
 		"pokemon_name":  pokemonEntry.Name,
 		"user_username": user.Username,
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	})
 }
 
-// Needed Responst struct for cleaner JSON response, ie issues with displaying type 2 since they are sql.NullString
+// Needed Response struct for cleaner JSON response, ie issues with displaying type 2 since they are sql.NullString
 type PokedexResponse struct {
 	ID             int32  `json:"ID"`
 	Name           string `json:"Name"`
@@ -495,7 +507,7 @@ func (cfg *Config) ChangeActivePokemonHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// pokemone_identifier is the ID of the pokemon
+	// pokemon_identifier is the ID of the pokemon
 	pokemonIDStr := r.PostForm.Get("pokemon_identifier")
 	if pokemonIDStr == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "pokemon_identifier is required"})
@@ -525,12 +537,16 @@ func (cfg *Config) ChangeActivePokemonHandler(w http.ResponseWriter, r *http.Req
 	}
 
 	// activate new pokemon
-	err = cfg.DB.ActivateUserPokemon(ctx, database.ActivateUserPokemonParams{
+	_, err = cfg.DB.ActivateUserPokemon(ctx, database.ActivateUserPokemonParams{
 		UserID:    user.ID,
 		PokemonID: sql.NullInt32{Valid: true, Int32: pokemonID},
 	})
 	if err != nil {
-		log.Printf("error activating user's new pokemon: %s", err)
+		if err == sql.ErrNoRows {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "pokemon not owned by user"})
+			return
+		}
+		log.Printf("activate failed: %v", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
 		return
 	}
