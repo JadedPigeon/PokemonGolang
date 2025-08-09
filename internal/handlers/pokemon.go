@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"math/rand/v2"
@@ -189,6 +190,11 @@ func (cfg *Config) FetchPokemonData(ctx context.Context, identifier string) erro
 			continue
 		}
 
+		// filter out “bad” description moves (see helper functions below)
+		if desc := getLatestEnglishDescription(md.FlavorTextEntries); isBannedDescription(desc) {
+			continue
+		}
+
 		moveType := strings.ToLower(md.Type.Name)
 		if _, ok := pokeTypes[moveType]; ok {
 			if len(sameType) < 4 {
@@ -237,7 +243,46 @@ type MoveDetail struct {
 	} `json:"flavor_text_entries"`
 }
 
-// helper function to get the latest English description of a move
+// helper functions to get the latest English description of a move
+var ErrBannedMove = errors.New("banned move description")
+
+// Normalize punctuation/whitespace so comparisons are robust
+func normalizeDesc(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	r := strings.NewReplacer(
+		"’", "'", // curly to straight apostrophe
+		"—", "-", // em-dash
+		"\n", " ", // newlines to spaces
+		"\t", " ",
+	)
+	s = r.Replace(s)
+	// collapse multiple spaces
+	var b strings.Builder
+	space := false
+	for _, ch := range s {
+		if ch == ' ' {
+			if !space {
+				b.WriteRune(' ')
+			}
+			space = true
+		} else {
+			b.WriteRune(ch)
+			space = false
+		}
+	}
+	return b.String()
+}
+
+// PokéAPI sometimes returns this “don’t use/forget this move” blurb.
+// Treat any move with this as invalid for selection.
+func isBannedDescription(desc string) bool {
+	d := normalizeDesc(desc)
+	// Be tolerant to minor wording/spacing differences by checking key parts
+	return strings.Contains(d, "this move can't be used") &&
+		strings.Contains(d, "recommended that this move is forgotten") &&
+		strings.Contains(d, "once forgotten, this move can't be remembered")
+}
+
 func getLatestEnglishDescription(entries []struct {
 	FlavorText   string                `json:"flavor_text"`
 	Language     struct{ Name string } `json:"language"`
@@ -245,7 +290,7 @@ func getLatestEnglishDescription(entries []struct {
 }) string {
 	for i := len(entries) - 1; i >= 0; i-- {
 		if entries[i].Language.Name == "en" {
-			return entries[i].FlavorText
+			return strings.TrimSpace(entries[i].FlavorText)
 		}
 	}
 	return ""
