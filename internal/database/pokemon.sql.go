@@ -15,17 +15,17 @@ import (
 const activateUserPokemon = `-- name: ActivateUserPokemon :one
 UPDATE user_pokemon
 SET is_active = TRUE
-WHERE user_id = $1 AND pokemon_id = $2
+WHERE user_id = $1 AND id = $2
 RETURNING id
 `
 
 type ActivateUserPokemonParams struct {
-	UserID    uuid.UUID
-	PokemonID sql.NullInt32
+	UserID uuid.UUID
+	ID     uuid.UUID
 }
 
 func (q *Queries) ActivateUserPokemon(ctx context.Context, arg ActivateUserPokemonParams) (uuid.UUID, error) {
-	row := q.db.QueryRowContext(ctx, activateUserPokemon, arg.UserID, arg.PokemonID)
+	row := q.db.QueryRowContext(ctx, activateUserPokemon, arg.UserID, arg.ID)
 	var id uuid.UUID
 	err := row.Scan(&id)
 	return id, err
@@ -109,50 +109,14 @@ func (q *Queries) FetchPokemonDataByName(ctx context.Context, lower string) (Pok
 	return i, err
 }
 
-const getMoveByID = `-- name: GetMoveByID :one
-SELECT move_id, name, power, type, description FROM moves WHERE move_id = $1
-`
-
-func (q *Queries) GetMoveByID(ctx context.Context, moveID int32) (Move, error) {
-	row := q.db.QueryRowContext(ctx, getMoveByID, moveID)
-	var i Move
-	err := row.Scan(
-		&i.MoveID,
-		&i.Name,
-		&i.Power,
-		&i.Type,
-		&i.Description,
-	)
-	return i, err
-}
-
-const getUserChallengePokemon = `-- name: GetUserChallengePokemon :one
-SELECT cp.id, cp.pokemon_id, cp.current_hp, cp.created_at
-FROM users u
-JOIN challenger_pokemon cp ON u.challenge_pokemon_id = cp.id
-WHERE u.id = $1
-`
-
-func (q *Queries) GetUserChallengePokemon(ctx context.Context, id uuid.UUID) (ChallengerPokemon, error) {
-	row := q.db.QueryRowContext(ctx, getUserChallengePokemon, id)
-	var i ChallengerPokemon
-	err := row.Scan(
-		&i.ID,
-		&i.PokemonID,
-		&i.CurrentHp,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
-const getUserPokemon = `-- name: GetUserPokemon :many
+const getAllUserPokemon = `-- name: GetAllUserPokemon :many
 SELECT p.id, p.name, p.type_1, p.type_2, p.hp, p.attack, p.defense, p.special_attack, p.special_defense, p.speed, p.image_url, up.is_active
 FROM user_pokemon up
 JOIN pokedex p ON up.pokemon_id = p.id
 WHERE up.user_id = $1
 `
 
-type GetUserPokemonRow struct {
+type GetAllUserPokemonRow struct {
 	ID             int32
 	Name           string
 	Type1          string
@@ -167,15 +131,15 @@ type GetUserPokemonRow struct {
 	IsActive       bool
 }
 
-func (q *Queries) GetUserPokemon(ctx context.Context, userID uuid.UUID) ([]GetUserPokemonRow, error) {
-	rows, err := q.db.QueryContext(ctx, getUserPokemon, userID)
+func (q *Queries) GetAllUserPokemon(ctx context.Context, userID uuid.UUID) ([]GetAllUserPokemonRow, error) {
+	rows, err := q.db.QueryContext(ctx, getAllUserPokemon, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []GetUserPokemonRow
+	var items []GetAllUserPokemonRow
 	for rows.Next() {
-		var i GetUserPokemonRow
+		var i GetAllUserPokemonRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
@@ -201,6 +165,68 @@ func (q *Queries) GetUserPokemon(ctx context.Context, userID uuid.UUID) ([]GetUs
 		return nil, err
 	}
 	return items, nil
+}
+
+const getMoveByID = `-- name: GetMoveByID :one
+SELECT move_id, name, power, type, description FROM moves WHERE move_id = $1
+`
+
+func (q *Queries) GetMoveByID(ctx context.Context, moveID int32) (Move, error) {
+	row := q.db.QueryRowContext(ctx, getMoveByID, moveID)
+	var i Move
+	err := row.Scan(
+		&i.MoveID,
+		&i.Name,
+		&i.Power,
+		&i.Type,
+		&i.Description,
+	)
+	return i, err
+}
+
+const getOneUserPokemon = `-- name: GetOneUserPokemon :one
+SELECT id, user_id, pokemon_id, nickname, current_hp, is_active, created_at
+FROM user_pokemon
+WHERE user_id = $1 and pokemon_id = $2
+`
+
+type GetOneUserPokemonParams struct {
+	UserID    uuid.UUID
+	PokemonID sql.NullInt32
+}
+
+func (q *Queries) GetOneUserPokemon(ctx context.Context, arg GetOneUserPokemonParams) (UserPokemon, error) {
+	row := q.db.QueryRowContext(ctx, getOneUserPokemon, arg.UserID, arg.PokemonID)
+	var i UserPokemon
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.PokemonID,
+		&i.Nickname,
+		&i.CurrentHp,
+		&i.IsActive,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getUserChallengePokemon = `-- name: GetUserChallengePokemon :one
+SELECT cp.id, cp.pokemon_id, cp.current_hp, cp.created_at
+FROM users u
+JOIN challenger_pokemon cp ON u.challenge_pokemon_id = cp.id
+WHERE u.id = $1
+`
+
+func (q *Queries) GetUserChallengePokemon(ctx context.Context, id uuid.UUID) (ChallengerPokemon, error) {
+	row := q.db.QueryRowContext(ctx, getUserChallengePokemon, id)
+	var i ChallengerPokemon
+	err := row.Scan(
+		&i.ID,
+		&i.PokemonID,
+		&i.CurrentHp,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const insertChallengePokemon = `-- name: InsertChallengePokemon :exec
@@ -291,6 +317,7 @@ func (q *Queries) InsertPokedex(ctx context.Context, arg InsertPokedexParams) er
 const insertPokemonMove = `-- name: InsertPokemonMove :exec
 INSERT INTO pokemon_moves (pokemon_id, move_id)
 VALUES ($1, $2)
+ON CONFLICT (pokemon_id, move_id) DO NOTHING
 `
 
 type InsertPokemonMoveParams struct {

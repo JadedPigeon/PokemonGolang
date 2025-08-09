@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand/v2"
 	"net/http"
 	"strconv"
 	"strings"
@@ -137,58 +138,92 @@ func (cfg *Config) FetchPokemonData(ctx context.Context, identifier string) erro
 	}
 
 	// Select up to 4 moves, prioritizing same-type moves
-	pokeTypes := []string{strings.ToLower(data.Types[0].Type.Name)}
+	pokeTypes := map[string]struct{}{
+		strings.ToLower(data.Types[0].Type.Name): {},
+	}
 	if type2.Valid {
-		pokeTypes = append(pokeTypes, type2.String)
+		pokeTypes[type2.String] = struct{}{}
 	}
 
-	type moveCandidate struct {
-		moveID     int
-		isSameType bool
-	}
-	var candidates []moveCandidate
+	// Shuffle to avoid always picking the same early-list moves
+	rand.Shuffle(len(data.Moves), func(i, j int) { data.Moves[i], data.Moves[j] = data.Moves[j], data.Moves[i] })
+
+	selected := make([]int, 0, 4)
+	sameType := make([]int, 0, 4)
+	others := make([]int, 0, 4)
+
+	const maxAPICalls = 8 // safety valve for slow networks / rate limits
+	apiCalls := 0
+
 	for _, m := range data.Moves {
+		// Stop once we know we can fill 4 (best case)
+		if len(sameType) == 4 {
+			break
+		}
 		// Parse move ID from URL
 		parts := strings.Split(strings.Trim(m.Move.URL, "/"), "/")
-		if len(parts) < 1 {
+		if len(parts) == 0 {
 			continue
 		}
 		moveID, err := strconv.Atoi(parts[len(parts)-1])
 		if err != nil {
 			continue
 		}
-		moveDetail, err := cfg.FetchPokemonMoveData(ctx, moveID)
-		if err != nil || moveDetail.Power == nil || moveDetail.DamageClass.Name == "status" {
+
+		// 1) Try DB first (zero HTTP). Your moves table has Power and Type.
+		if dbMove, err := cfg.DB.GetMoveByID(ctx, int32(moveID)); err == nil {
+			if dbMove.Power > 0 { // power>0 implies non-status
+				if _, ok := pokeTypes[strings.ToLower(dbMove.Type)]; ok {
+					if len(sameType) < 4 {
+						sameType = append(sameType, moveID)
+					}
+				} else if len(others) < 4 {
+					others = append(others, moveID)
+				}
+			}
+			// Already decided from DB; continue to next move.
+			continue
+		} else if err != sql.ErrNoRows {
+			// Unexpected DB error; skip this move gracefully
 			continue
 		}
-		isSameType := false
-		for _, t := range pokeTypes {
-			if strings.ToLower(moveDetail.Type.Name) == t {
-				isSameType = true
-				break
+
+		// 2) Not in DB: fall back to API, but respect a hard cap to avoid N calls.
+		if apiCalls >= maxAPICalls {
+			continue
+		}
+		md, err := cfg.FetchPokemonMoveData(ctx, moveID)
+		apiCalls++
+		if err != nil || md == nil || md.Power == nil || md.DamageClass.Name == "status" {
+			continue
+		}
+
+		moveType := strings.ToLower(md.Type.Name)
+		if _, ok := pokeTypes[moveType]; ok {
+			if len(sameType) < 4 {
+				sameType = append(sameType, moveID)
 			}
-		}
-		candidates = append(candidates, moveCandidate{moveID: moveID, isSameType: isSameType})
-	}
-	// Prioritize same-type moves
-	var selected []int
-	for _, c := range candidates {
-		if c.isSameType && len(selected) < 4 {
-			selected = append(selected, c.moveID)
+		} else if len(others) < 4 {
+			others = append(others, moveID)
 		}
 	}
-	for _, c := range candidates {
-		if !c.isSameType && len(selected) < 4 {
-			selected = append(selected, c.moveID)
-		}
+
+	// Merge preference buckets, cap at 4
+	selected = append(selected, sameType...)
+	if len(selected) < 4 {
+		selected = append(selected, others...)
 	}
+	if len(selected) > 4 {
+		selected = selected[:4]
+	}
+
+	// Link moves (use ON CONFLICT DO NOTHING in SQL to avoid dup errors)
 	for _, moveID := range selected {
-		err := cfg.DB.InsertPokemonMove(ctx, database.InsertPokemonMoveParams{
+		if err := cfg.DB.InsertPokemonMove(ctx, database.InsertPokemonMoveParams{
 			PokemonID: sql.NullInt32{Int32: int32(data.ID), Valid: true},
 			MoveID:    sql.NullInt32{Int32: int32(moveID), Valid: true},
-		})
-		if err != nil {
-			log.Printf("error linking move %d to pokemon %d: %v", moveID, data.ID, err)
+		}); err != nil {
+			log.Printf("link move %d -> pokemon %d: %v", moveID, data.ID, err)
 		}
 	}
 	return err
@@ -316,8 +351,9 @@ func (cfg *Config) CatchPokemonHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	newUPID := uuid.New()
 	err = cfg.DB.InsertUserPokemon(ctx, database.InsertUserPokemonParams{
-		ID:        uuid.New(),
+		ID:        newUPID,
 		UserID:    user.ID,
 		PokemonID: sql.NullInt32{Valid: true, Int32: int32(pokemonEntry.ID)},
 		Nickname:  sql.NullString{Valid: false},
@@ -339,8 +375,8 @@ func (cfg *Config) CatchPokemonHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, err = cfg.DB.ActivateUserPokemon(ctx, database.ActivateUserPokemonParams{
-		UserID:    user.ID,
-		PokemonID: sql.NullInt32{Valid: true, Int32: int32(pokemonEntry.ID)},
+		UserID: user.ID,
+		ID:     newUPID,
 	})
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -465,7 +501,7 @@ func (cfg *Config) GetUserPokemonHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	pokemonList, err := cfg.DB.GetUserPokemon(r.Context(), user.ID)
+	pokemonList, err := cfg.DB.GetAllUserPokemon(r.Context(), user.ID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve Pokémon"})
 		return
@@ -528,6 +564,19 @@ func (cfg *Config) ChangeActivePokemonHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// Get user_pokemon id
+	userPokemon, err := cfg.DB.GetOneUserPokemon(ctx, database.GetOneUserPokemonParams{
+		UserID:    user.ID,
+		PokemonID: sql.NullInt32{Valid: true, Int32: pokemonID},
+	})
+	if err != nil {
+		if err == sql.ErrNoRows {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Pokemon not found for user"})
+		}
+		log.Printf("error getting user pokemon: %s", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
+	}
+
 	// deactivate all user pokemon
 	err = cfg.DB.DeactivateAllUserPokemon(ctx, user.ID)
 	if err != nil {
@@ -538,8 +587,8 @@ func (cfg *Config) ChangeActivePokemonHandler(w http.ResponseWriter, r *http.Req
 
 	// activate new pokemon
 	_, err = cfg.DB.ActivateUserPokemon(ctx, database.ActivateUserPokemonParams{
-		UserID:    user.ID,
-		PokemonID: sql.NullInt32{Valid: true, Int32: pokemonID},
+		UserID: user.ID,
+		ID:     userPokemon.ID,
 	})
 	if err != nil {
 		if err == sql.ErrNoRows {

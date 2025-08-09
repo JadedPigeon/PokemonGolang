@@ -20,7 +20,8 @@ VALUES ($1, $2, $3, $4, $5);
 
 -- name: InsertPokemonMove :exec
 INSERT INTO pokemon_moves (pokemon_id, move_id)
-VALUES ($1, $2);
+VALUES ($1, $2)
+ON CONFLICT (pokemon_id, move_id) DO NOTHING;
 
 -- name: InsertUserPokemon :exec
 INSERT INTO user_pokemon (
@@ -46,7 +47,7 @@ WHERE user_id = $1;
 -- name: ActivateUserPokemon :one
 UPDATE user_pokemon
 SET is_active = TRUE
-WHERE user_id = $1 AND pokemon_id = $2
+WHERE user_id = $1 AND id = $2
 RETURNING id;
 
 -- name: InsertChallengePokemon :exec
@@ -74,8 +75,14 @@ WHERE u.id = $1;
 DELETE FROM challenger_pokemon
 WHERE id = $1;
 
--- name: GetUserPokemon :many
+-- name: GetAllUserPokemon :many
 SELECT p.*, up.is_active
 FROM user_pokemon up
 JOIN pokedex p ON up.pokemon_id = p.id
 WHERE up.user_id = $1;
+
+
+-- name: GetOneUserPokemon :one
+SELECT *
+FROM user_pokemon
+WHERE user_id = $1 and pokemon_id = $2;
