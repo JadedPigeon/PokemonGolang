@@ -42,8 +42,8 @@ type Pokedex struct {
 
 type PokemonMove struct {
 	ID        int32
-	PokemonID sql.NullInt32
-	MoveID    sql.NullInt32
+	PokemonID int32
+	MoveID    int32
 }
 
 type User struct {

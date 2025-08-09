@@ -109,6 +109,27 @@ func (q *Queries) FetchPokemonDataByName(ctx context.Context, lower string) (Pok
 	return i, err
 }
 
+const getActiveUserPokemon = `-- name: GetActiveUserPokemon :one
+SELECT id, user_id, pokemon_id, nickname, current_hp, is_active, created_at
+FROM user_pokemon
+WHERE user_id = $1 AND is_active = True
+`
+
+func (q *Queries) GetActiveUserPokemon(ctx context.Context, userID uuid.UUID) (UserPokemon, error) {
+	row := q.db.QueryRowContext(ctx, getActiveUserPokemon, userID)
+	var i UserPokemon
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.PokemonID,
+		&i.Nickname,
+		&i.CurrentHp,
+		&i.IsActive,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getAllUserPokemon = `-- name: GetAllUserPokemon :many
 SELECT p.id, p.name, p.type_1, p.type_2, p.hp, p.attack, p.defense, p.special_attack, p.special_defense, p.speed, p.image_url, up.is_active
 FROM user_pokemon up
@@ -208,6 +229,42 @@ func (q *Queries) GetOneUserPokemon(ctx context.Context, arg GetOneUserPokemonPa
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const getPokemonMoves = `-- name: GetPokemonMoves :many
+SELECT m.move_id, m.name, m.power, m.type, m.description
+FROM pokemon_moves pm
+JOIN moves m on pm.move_id = m.move_id
+WHERE pm.pokemon_id = $1
+`
+
+func (q *Queries) GetPokemonMoves(ctx context.Context, pokemonID int32) ([]Move, error) {
+	rows, err := q.db.QueryContext(ctx, getPokemonMoves, pokemonID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Move
+	for rows.Next() {
+		var i Move
+		if err := rows.Scan(
+			&i.MoveID,
+			&i.Name,
+			&i.Power,
+			&i.Type,
+			&i.Description,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getUserChallengePokemon = `-- name: GetUserChallengePokemon :one
@@ -321,8 +378,8 @@ ON CONFLICT (pokemon_id, move_id) DO NOTHING
 `
 
 type InsertPokemonMoveParams struct {
-	PokemonID sql.NullInt32
-	MoveID    sql.NullInt32
+	PokemonID int32
+	MoveID    int32
 }
 
 func (q *Queries) InsertPokemonMove(ctx context.Context, arg InsertPokemonMoveParams) error {

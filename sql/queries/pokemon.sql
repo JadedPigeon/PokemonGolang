@@ -86,3 +86,14 @@ WHERE up.user_id = $1;
 SELECT *
 FROM user_pokemon
 WHERE user_id = $1 and pokemon_id = $2;
+
+-- name: GetActiveUserPokemon :one
+SELECT *
+FROM user_pokemon
+WHERE user_id = $1 AND is_active = True;
+
+-- name: GetPokemonMoves :many
+SELECT m.*
+FROM pokemon_moves pm
+JOIN moves m on pm.move_id = m.move_id
+WHERE pm.pokemon_id = $1;

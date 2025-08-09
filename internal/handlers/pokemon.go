@@ -211,8 +211,8 @@ func (cfg *Config) FetchPokemonData(ctx context.Context, identifier string) erro
 	// Link moves (use ON CONFLICT DO NOTHING in SQL to avoid dup errors)
 	for _, moveID := range selected {
 		if err := cfg.DB.InsertPokemonMove(ctx, database.InsertPokemonMoveParams{
-			PokemonID: sql.NullInt32{Int32: int32(data.ID), Valid: true},
-			MoveID:    sql.NullInt32{Int32: int32(moveID), Valid: true},
+			PokemonID: int32(data.ID),
+			MoveID:    int32(moveID),
 		}); err != nil {
 			log.Printf("link move %d -> pokemon %d: %v", moveID, data.ID, err)
 		}
@@ -594,4 +594,200 @@ func (cfg *Config) ChangeActivePokemonHandler(w http.ResponseWriter, r *http.Req
 		"pokemon_id":    pokemonIDStr,
 		"user_username": user.Username,
 	})
+}
+
+func (cfg *Config) FightHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "Invalid method"})
+		return
+	}
+	ctx := r.Context()
+	user, ok := ctx.Value(userContextKey).(*database.User)
+	if !ok || user == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+		return
+	}
+
+	// Get user's active pokemon
+	activePokemon, err := cfg.DB.GetActiveUserPokemon(ctx, user.ID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "No active pokemon found"})
+			return
+		}
+		log.Printf("error getting active pokemon: %s", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
+		return
+	}
+
+	// Get challenge pokemon
+	challengePokemon, err := cfg.DB.GetUserChallengePokemon(ctx, user.ID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "No challenge pokemon found"})
+			return
+		}
+		log.Printf("error getting challenge pokemon: %s", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
+		return
+	}
+
+	// Get user pokemon details
+	userPokemon, err := cfg.DB.FetchPokemonDataById(ctx, activePokemon.PokemonID.Int32)
+	if err != nil {
+		log.Printf("error fetching user pokemon data: %s", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
+	}
+
+	// Get user's pokmon moves
+	userMoves, err := cfg.DB.GetPokemonMoves(ctx, activePokemon.PokemonID.Int32)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "No moves found for user's pokemon"})
+			return
+		}
+		log.Printf("error getting user pokemon moves: %s", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
+		return
+	}
+
+	// Get challenge pokemon details
+	challengePokemonDetails, err := cfg.DB.FetchPokemonDataById(ctx, challengePokemon.PokemonID.Int32)
+	if err != nil {
+		log.Printf("error fetching challenge pokemon data: %s", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
+	}
+
+	// Get challenge pokemon moves
+	challengerMoves, err := cfg.DB.GetPokemonMoves(ctx, challengePokemon.PokemonID.Int32)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "No moves found for challenger's pokemon"})
+			return
+		}
+		log.Printf("error getting challenger pokemon moves: %s", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
+		return
+	}
+
+	// No game logic implemented yet, just return the data
+	type moveDTO struct {
+		ID          int32   `json:"id"`
+		Name        string  `json:"name"`
+		Power       int32   `json:"power"`
+		Type        string  `json:"type"`
+		Description *string `json:"description,omitempty"`
+	}
+
+	toMoves := func(ms []database.Move) []moveDTO {
+		out := make([]moveDTO, 0, len(ms))
+		for _, m := range ms {
+			var desc *string
+			if m.Description.Valid {
+				desc = &m.Description.String
+			}
+			out = append(out, moveDTO{
+				ID:          m.MoveID,
+				Name:        m.Name,
+				Power:       m.Power,
+				Type:        m.Type,
+				Description: desc,
+			})
+		}
+		return out
+	}
+
+	type pokemonDTO struct {
+		ID    int32    `json:"id"`
+		Name  string   `json:"name"`
+		Types []string `json:"types"`
+		Stats struct {
+			HP             int32 `json:"hp"`
+			Attack         int32 `json:"attack"`
+			Defense        int32 `json:"defense"`
+			SpecialAttack  int32 `json:"special_attack"`
+			SpecialDefense int32 `json:"special_defense"`
+			Speed          int32 `json:"speed"`
+		} `json:"stats"`
+		ImageURL string    `json:"image_url,omitempty"`
+		Moves    []moveDTO `json:"moves"`
+	}
+
+	type fightResponse struct {
+		User struct {
+			Nickname  *string    `json:"nickname,omitempty"`
+			CurrentHP int32      `json:"current_hp"`
+			IsActive  bool       `json:"is_active"`
+			Pokemon   pokemonDTO `json:"pokemon"`
+		} `json:"user"`
+		Challenger struct {
+			CurrentHP int32      `json:"current_hp"`
+			Pokemon   pokemonDTO `json:"pokemon"`
+		} `json:"challenger"`
+	}
+
+	// Build user pokemon payload
+	userPoke := pokemonDTO{
+		ID:   userPokemon.ID,
+		Name: userPokemon.Name,
+		Types: func() []string {
+			if userPokemon.Type2.Valid {
+				return []string{userPokemon.Type1, userPokemon.Type2.String}
+			}
+			return []string{userPokemon.Type1}
+		}(),
+		ImageURL: func() string {
+			if userPokemon.ImageUrl.Valid {
+				return userPokemon.ImageUrl.String
+			}
+			return ""
+		}(),
+		Moves: toMoves(userMoves),
+	}
+	userPoke.Stats.HP = userPokemon.Hp
+	userPoke.Stats.Attack = userPokemon.Attack
+	userPoke.Stats.Defense = userPokemon.Defense
+	userPoke.Stats.SpecialAttack = userPokemon.SpecialAttack
+	userPoke.Stats.SpecialDefense = userPokemon.SpecialDefense
+	userPoke.Stats.Speed = userPokemon.Speed
+
+	// Build challenger pokemon payload
+	challengerPoke := pokemonDTO{
+		ID:   challengePokemonDetails.ID,
+		Name: challengePokemonDetails.Name,
+		Types: func() []string {
+			if challengePokemonDetails.Type2.Valid {
+				return []string{challengePokemonDetails.Type1, challengePokemonDetails.Type2.String}
+			}
+			return []string{challengePokemonDetails.Type1}
+		}(),
+		ImageURL: func() string {
+			if challengePokemonDetails.ImageUrl.Valid {
+				return challengePokemonDetails.ImageUrl.String
+			}
+			return ""
+		}(),
+		Moves: toMoves(challengerMoves),
+	}
+	challengerPoke.Stats.HP = challengePokemonDetails.Hp
+	challengerPoke.Stats.Attack = challengePokemonDetails.Attack
+	challengerPoke.Stats.Defense = challengePokemonDetails.Defense
+	challengerPoke.Stats.SpecialAttack = challengePokemonDetails.SpecialAttack
+	challengerPoke.Stats.SpecialDefense = challengePokemonDetails.SpecialDefense
+	challengerPoke.Stats.Speed = challengePokemonDetails.Speed
+
+	resp := fightResponse{}
+	if activePokemon.Nickname.Valid {
+		resp.User.Nickname = &activePokemon.Nickname.String
+	}
+	resp.User.CurrentHP = activePokemon.CurrentHp
+	resp.User.IsActive = activePokemon.IsActive
+	resp.User.Pokemon = userPoke
+
+	resp.Challenger.CurrentHP = challengePokemon.CurrentHp
+	resp.Challenger.Pokemon = challengerPoke
+
+	writeJSON(w, http.StatusOK, resp)
+	return
+
 }
