@@ -788,6 +788,4 @@ func (cfg *Config) FightHandler(w http.ResponseWriter, r *http.Request) {
 	resp.Challenger.Pokemon = challengerPoke
 
 	writeJSON(w, http.StatusOK, resp)
-	return
-
 }
