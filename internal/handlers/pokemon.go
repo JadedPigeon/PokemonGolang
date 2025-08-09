@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"math/rand/v2"
+	"math/rand"
 	"net/http"
 	"strconv"
 	"strings"
@@ -641,7 +641,7 @@ func (cfg *Config) ChangeActivePokemonHandler(w http.ResponseWriter, r *http.Req
 	})
 }
 
-func (cfg *Config) FightHandler(w http.ResponseWriter, r *http.Request) {
+func (cfg *Config) StartBattleHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "Invalid method"})
 		return
@@ -833,4 +833,173 @@ func (cfg *Config) FightHandler(w http.ResponseWriter, r *http.Request) {
 	resp.Challenger.Pokemon = challengerPoke
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// User makes a move followed by the challenger making a move
+// This function will just return a description response, no actual game logic. No pokemon are defeated
+func (cfg *Config) FightHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "Invalid method"})
+		return
+	}
+
+	// Parse form data
+	if err := r.ParseForm(); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Bad form data"})
+		return
+	}
+
+	// move used by user
+	moveID := r.PostForm.Get("move_id")
+	if moveID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "pokemon_identifier is required"})
+		return
+	}
+
+	ctx := r.Context()
+	user, ok := ctx.Value(userContextKey).(*database.User)
+	if !ok || user == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+		return
+	}
+
+	// Get user's active pokemon
+	activePokemon, err := cfg.DB.GetActiveUserPokemon(ctx, user.ID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "No active pokemon found"})
+			return
+		}
+		log.Printf("error getting active pokemon: %s", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
+		return
+	}
+
+	// Get challenge pokemon
+	challengePokemon, err := cfg.DB.GetUserChallengePokemon(ctx, user.ID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "No challenge pokemon found"})
+			return
+		}
+		log.Printf("error getting challenge pokemon: %s", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
+		return
+	}
+
+	// Get user pokemon details
+	userPokemon, err := cfg.DB.FetchPokemonDataById(ctx, activePokemon.PokemonID.Int32)
+	if err != nil {
+		log.Printf("error fetching user pokemon data: %s", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
+	}
+
+	// Get user's pokmon moves
+	userMoves, err := cfg.DB.GetPokemonMoves(ctx, activePokemon.PokemonID.Int32)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "No moves found for user's pokemon"})
+			return
+		}
+		log.Printf("error getting user pokemon moves: %s", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
+		return
+	}
+
+	// Get challenge pokemon details
+	challengePokemonDetails, err := cfg.DB.FetchPokemonDataById(ctx, challengePokemon.PokemonID.Int32)
+	if err != nil {
+		log.Printf("error fetching challenge pokemon data: %s", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
+	}
+
+	// Get challenge pokemon moves
+	challengerMoves, err := cfg.DB.GetPokemonMoves(ctx, challengePokemon.PokemonID.Int32)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "No moves found for challenger's pokemon"})
+			return
+		}
+		log.Printf("error getting challenger pokemon moves: %s", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
+		return
+	}
+
+	// Use move by User
+	var userMove *database.Move
+	for _, m := range userMoves {
+		if strconv.Itoa(int(m.MoveID)) == moveID {
+			userMove = &m
+			break
+		}
+	}
+	if userMove == nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid move ID"})
+		return
+	}
+
+	// Challenger move chosen randomly
+	var challengerMove *database.Move
+	if len(challengerMoves) > 0 {
+		challengerMove = &challengerMoves[rand.Intn(len(challengerMoves))]
+	} else {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "No moves available for challenger"})
+		return
+	}
+
+	// JSON reponse for the fight description - no game logic
+	type moveDTO struct {
+		ID          int32   `json:"id"`
+		Name        string  `json:"name"`
+		Type        string  `json:"type"`
+		Power       int32   `json:"power"`
+		Description *string `json:"description,omitempty"`
+	}
+
+	type fightDescResp struct {
+		User struct {
+			Name        string  `json:"name"`
+			MoveUsed    moveDTO `json:"move_used"`
+			Description string  `json:"description"`
+		} `json:"user"`
+		Challenger struct {
+			Name        string  `json:"name"`
+			MoveUsed    moveDTO `json:"move_used"`
+			Description string  `json:"description"`
+		} `json:"challenger"`
+	}
+
+	descPtr := func(ns sql.NullString) *string {
+		if ns.Valid {
+			return &ns.String
+		}
+		return nil
+	}
+
+	var resp fightDescResp
+
+	// user section
+	resp.User.Name = userPokemon.Name
+	resp.User.MoveUsed = moveDTO{
+		ID:          userMove.MoveID,
+		Name:        userMove.Name,
+		Type:        userMove.Type,
+		Power:       userMove.Power,
+		Description: descPtr(userMove.Description),
+	}
+	resp.User.Description = fmt.Sprintf("%s used %s!", userPokemon.Name, userMove.Name)
+
+	// challenger section
+	resp.Challenger.Name = challengePokemonDetails.Name
+	resp.Challenger.MoveUsed = moveDTO{
+		ID:          challengerMove.MoveID,
+		Name:        challengerMove.Name,
+		Type:        challengerMove.Type,
+		Power:       challengerMove.Power,
+		Description: descPtr(challengerMove.Description),
+	}
+	resp.Challenger.Description = fmt.Sprintf("%s used %s!", challengePokemonDetails.Name, challengerMove.Name)
+
+	writeJSON(w, http.StatusOK, resp)
+
 }
