@@ -10,11 +10,13 @@ import (
 	"time"
 
 	"github.com/JadedPigeon/pokemongolang/internal/database"
+	"github.com/JadedPigeon/pokemongolang/internal/describe"
 	"github.com/google/uuid"
 )
 
 type Config struct {
-	DB *database.Queries
+	DB        *database.Queries
+	Describer describe.Describer // Optional, can be nil for plain text fallback
 }
 
 type Login struct {

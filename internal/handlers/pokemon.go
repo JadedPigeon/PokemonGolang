@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/JadedPigeon/pokemongolang/internal/database"
 	"github.com/JadedPigeon/pokemongolang/internal/describe"
@@ -1002,10 +1003,25 @@ func (cfg *Config) FightHandler(w http.ResponseWriter, r *http.Request) {
 		challengerAction.Move.Description = challengerMove.Description.String
 	}
 
-	// ===== Generate lines via Plain describer
-	plain := describe.Plain{}
-	userLine, _ := plain.DescribeAction(ctx, userAction)
-	challLine, _ := plain.DescribeAction(ctx, challengerAction)
+	// Try AI (or Plain, depending on cfg.Describer). Always fallback to Plain.
+	descCtx, cancel := context.WithTimeout(ctx, 6*time.Second)
+	defer cancel()
+
+	userLine, uErr := cfg.Describer.DescribeAction(descCtx, userAction)
+	if uErr != nil || userLine == "" {
+		if uErr != nil {
+			log.Printf("AI user err: %v", uErr)
+		}
+		userLine, _ = (describe.Plain{}).DescribeAction(descCtx, userAction)
+	}
+
+	challLine, cErr := cfg.Describer.DescribeAction(descCtx, challengerAction)
+	if cErr != nil || challLine == "" {
+		if cErr != nil {
+			log.Printf("AI chall err: %v", cErr)
+		}
+		challLine, _ = (describe.Plain{}).DescribeAction(descCtx, challengerAction)
+	}
 
 	// ===== Build final response
 	var resp fightDescResp

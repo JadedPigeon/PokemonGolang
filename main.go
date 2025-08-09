@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/JadedPigeon/pokemongolang/internal/database"
+	"github.com/JadedPigeon/pokemongolang/internal/describe"
 	"github.com/JadedPigeon/pokemongolang/internal/handlers"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
@@ -14,7 +15,14 @@ import (
 
 func main() {
 	godotenv.Load()
+
 	dbURL := os.Getenv("DB_URL")
+	useAI := os.Getenv("BATTLE_AI") == "on"
+	model := os.Getenv("BATTLE_AI_MODEL")
+	if model == "" {
+		model = "gpt-4o-mini" // default
+	}
+
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		log.Fatalf("Error opening DB: %v", err)
@@ -23,15 +31,17 @@ func main() {
 		log.Fatalf("Error pinging DB: %v", err)
 	}
 
-	cfg := &handlers.Config{DB: database.New(db)}
+	var d describe.Describer = describe.Plain{}
+	if useAI {
+		d = describe.NewOpenAI(model)
+	}
 
-	// testing
-	// if err := cfg.FetchPokemonData(context.Background(), "jolteon"); err != nil {
-	// 	log.Fatalf("failed to fetch pokemon: %v", err)
-	// } else {
-	// 	log.Println("Pokemon inserted/skipped successfully")
-	// }
+	cfg := &handlers.Config{
+		DB:        database.New(db),
+		Describer: d,
+	}
 
+	// Set up routes
 	http.HandleFunc("/register", cfg.RegisterHandler)
 	http.HandleFunc("/login", cfg.LoginHandler)
 	http.HandleFunc("/logout", cfg.AuthMiddleware(cfg.LogoutHandler))
