@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"log"
 	"math/rand/v2"
@@ -86,17 +85,9 @@ func (cfg *Config) GetPokemon(ctx context.Context, identifier string) (*database
 
 // Get pokemon from PokeAPI and insert in db
 func (cfg *Config) FetchPokemonData(ctx context.Context, identifier string) error {
-	resp, err := http.Get(fmt.Sprintf("%s%s", pokeapi, identifier))
-	if err != nil {
-		return fmt.Errorf("failed to fetch data: %w", err)
-	} else if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to fetch data: %s", resp.Status)
-	}
-	defer resp.Body.Close()
-
 	var data PokeAPIResponse
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return fmt.Errorf("failed to decode response: %w", err)
+	if err := getJSON(ctx, fmt.Sprintf("%s%s", pokeapi, identifier), &data); err != nil {
+		return fmt.Errorf("failed to fetch data: %w", err)
 	}
 
 	// Pokemon may have one or two types, handle accordingly
@@ -120,7 +111,7 @@ func (cfg *Config) FetchPokemonData(ctx context.Context, identifier string) erro
 		}
 	}
 
-	err = cfg.DB.InsertPokedex(ctx, database.InsertPokedexParams{
+	err := cfg.DB.InsertPokedex(ctx, database.InsertPokedexParams{
 		ID:             int32(data.ID),
 		Name:           strings.ToLower(data.Name),
 		Type1:          strings.ToLower(data.Types[0].Type.Name),
@@ -226,7 +217,7 @@ func (cfg *Config) FetchPokemonData(ctx context.Context, identifier string) erro
 			log.Printf("link move %d -> pokemon %d: %v", moveID, data.ID, err)
 		}
 	}
-	return err
+	return nil
 }
 
 type MoveDetail struct {
@@ -263,22 +254,13 @@ func getLatestEnglishDescription(entries []struct {
 // Fetches move data from the PokeAPI and inserts it into the db if it doesn't already exist
 func (cfg *Config) FetchPokemonMoveData(ctx context.Context, moveID int) (*MoveDetail, error) {
 	moveURL := fmt.Sprintf("https://pokeapi.co/api/v2/move/%d/", moveID)
-	resp, err := http.Get(moveURL)
-	if err != nil {
-		return nil, fmt.Errorf("fetch move: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("fetch move: status %d for %s", resp.StatusCode, moveURL)
-	}
-	defer resp.Body.Close()
-
 	var move MoveDetail
-	if err := json.NewDecoder(resp.Body).Decode(&move); err != nil {
-		return nil, fmt.Errorf("failed to decode move: %w", err)
+	if err := getJSON(ctx, moveURL, &move); err != nil {
+		return nil, fmt.Errorf("fetch move: %w", err)
 	}
 
 	// Check if move already exists
-	_, err = cfg.DB.GetMoveByID(ctx, int32(move.ID))
+	_, err := cfg.DB.GetMoveByID(ctx, int32(move.ID))
 	if err != nil && err != sql.ErrNoRows {
 		return nil, fmt.Errorf("error checking move in db: %w", err)
 	} else if err == sql.ErrNoRows {
@@ -474,23 +456,23 @@ func (cfg *Config) ChooseChallengePokemonHandler(w http.ResponseWriter, r *http.
 
 // Needed Response struct for cleaner JSON response, ie issues with displaying type 2 since they are sql.NullString
 type PokedexResponse struct {
-	ID             int32  `json:"ID"`
-	Name           string `json:"Name"`
-	Type1          string `json:"Type1"`
-	Type2          string `json:"Type2"`
-	Hp             int32  `json:"Hp"`
-	Attack         int32  `json:"Attack"`
-	Defense        int32  `json:"Defense"`
-	SpecialAttack  int32  `json:"SpecialAttack"`
-	SpecialDefense int32  `json:"SpecialDefense"`
-	Speed          int32  `json:"Speed"`
-	Active         bool   `json:"Active"`
-	ImageUrl       string `json:"ImageUrl"` // Changed to string for easier JSON handling
+	ID             int32  `json:"id"`
+	Name           string `json:"name"`
+	Type1          string `json:"type1"`
+	Type2          string `json:"type2,omitempty"`
+	Hp             int32  `json:"hp"`
+	Attack         int32  `json:"attack"`
+	Defense        int32  `json:"defense"`
+	SpecialAttack  int32  `json:"special_attack"`
+	SpecialDefense int32  `json:"special_defense"`
+	Speed          int32  `json:"speed"`
+	Active         bool   `json:"active"`
+	ImageUrl       string `json:"image_url,omitempty"`
 }
 
 func (cfg *Config) GetUserPokemonHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "Invalid method"})
 		return
 	}
 
@@ -513,6 +495,10 @@ func (cfg *Config) GetUserPokemonHandler(w http.ResponseWriter, r *http.Request)
 		if p.Type2.Valid {
 			type2 = p.Type2.String
 		}
+		img := ""
+		if p.ImageUrl.Valid {
+			img = p.ImageUrl.String
+		}
 		response = append(response, PokedexResponse{
 			ID:             p.ID,
 			Name:           p.Name,
@@ -525,7 +511,7 @@ func (cfg *Config) GetUserPokemonHandler(w http.ResponseWriter, r *http.Request)
 			SpecialDefense: p.SpecialDefense,
 			Speed:          p.Speed,
 			Active:         p.IsActive,
-			ImageUrl:       p.ImageUrl.String, // Assuming ImageUrl is always valid
+			ImageUrl:       img,
 		})
 	}
 
@@ -572,9 +558,11 @@ func (cfg *Config) ChangeActivePokemonHandler(w http.ResponseWriter, r *http.Req
 	if err != nil {
 		if err == sql.ErrNoRows {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "Pokemon not found for user"})
+			return
 		}
 		log.Printf("error getting user pokemon: %s", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
+		return
 	}
 
 	// deactivate all user pokemon
