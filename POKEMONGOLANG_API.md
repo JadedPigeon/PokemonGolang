@@ -279,5 +279,4 @@ curl -X POST http://localhost:8080/Fight   -H "X-CSRF-Token: $CSRF"   --cookie "
    - `/StartBattle`
    - `/Fight?move_id=<one of user move ids>`
 
-## Versioning
-This is an early MVP (v0.1). Routes may change; consider prefixing future APIs with `/api/v1/`.
+

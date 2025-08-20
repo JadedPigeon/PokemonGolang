@@ -8,15 +8,21 @@ The backend also supports **AI-powered battle descriptions** using OpenAI models
 
 ---
 
-## Why?
-Modern backend engineering requires more than just CRUD operations. This project demonstrates:
-- Secure authentication with sessions and CSRF protection.  
-- Real-world API integration with caching and data validation.  
-- Database-backed state management (users, Pokémon, moves, battles).  
-- Extendable design for future features (PvP battles, leveling, inventory systems).  
-- Optional AI integration for natural-language game narration.  
+## WHY?
 
-It’s built to showcase backend engineering skills in **Go, PostgreSQL, REST APIs, and AI integration**
+Modern backend engineering requires more than just CRUD operations. I wanted to challenge myself to build something that tackled real-world backend problems in a setting I enjoy—so I recreated the excitement and nostalgia of a Gameboy-style Pokémon game, but as a web service.
+
+This project demonstrates:
+
+- Secure authentication with sessions and CSRF protection
+- Real-world API integration with caching and data validation
+- Database-backed state management (users, Pokémon, moves, battles)
+- Extendable design for future features (PvP battles, leveling, inventory systems)
+- Optional AI integration for natural-language game narration
+
+It's built to showcase backend engineering skills in Go, PostgreSQL, REST APIs, and AI integration.
+
+Whether you're reviewing code, testing your API skills, or just curious about blending classic games with modern tech, this repo is meant to teach, demonstrate, and inspire.
 
 ---
 
@@ -87,22 +93,66 @@ It’s built to showcase backend engineering skills in **Go, PostgreSQL, REST AP
 
 ---
 
-## Postman Collection (Quick Testing)
+## Try it out with these examples!
 
-A ready-to-use Postman collection is included: **`pokemongolang.postman_collection.json`**.  
-It automatically sets `X-CSRF-Token` from the `csrf_token` cookie for protected requests.
+1. **Register your user**
+   ```bash
+   curl -X POST http://localhost:8080/register \
+     -d "username=AshKetchum&password=pokemon123"
+   ```
 
-Typical flow:
-1. `POST /register`  
-2. `POST /login`  
-3. `POST /catch` with `pokemon_identifier=charmander`  
-4. `GET /GetUserPokemon` (optional)
-5. `POST /ChangeActivePokemon` (option - requires another Pokemon to have been previously caught)
-6. `POST /challenge` with `pokemon_identifier=bulbasaur`  
-7. `GET /StartBattle`  
-8. `POST /Fight` with a valid `move_id` from your active Pokémon (`GET /StartBattle` shows available moves)
+2. **Log in as your user**  
+   This returns a session cookie and CSRF token in `cookies.txt` for simpler demonstration purposes.
+   ```bash
+   curl -i -c cookies.txt -X POST http://localhost:8080/login \
+     -d "username=AshKetchum&password=pokemon123"
+   ```
 
-> A user can catch or change their Pokemon, or change their challenger at any time but must use `GET /StartBattle` again before using `POST /Fight`
+3. **Extract the CSRF token**  
+   This makes it easier to use in future calls (you can also copy it directly from the login response).
+   ```bash
+   CSRF=$(grep csrf_token cookies.txt | awk '{print $7}')
+   ```
+
+4. **Catch your first Pokémon!**  
+   Remember to use the CSRF token from the login step.
+   ```bash
+   curl -b cookies.txt -X POST http://localhost:8080/catch \
+     -H "X-CSRF-Token: $CSRF" \
+     -d "pokemon_identifier=pikachu"
+   ```
+
+5. **Check your Pokémon**
+   ```bash
+   curl -b cookies.txt http://localhost:8080/GetUserPokemon \
+     -H "X-CSRF-Token: $CSRF"
+   ```
+
+6. **Choose your challenger**
+   ```bash
+   curl -b cookies.txt -X POST http://localhost:8080/challenge \
+     -H "X-CSRF-Token: $CSRF" \
+     -d "pokemon_identifier=meowth"
+   ```
+
+7. **Initiate the battle**  
+   You will need the `move_id` of one of the four moves your Pokémon knows. These moves are randomly assigned when the Pokémon is caught, based on power and type. They are returned in this call.
+   ```bash
+   curl -b cookies.txt http://localhost:8080/StartBattle \
+     -H "X-CSRF-Token: $CSRF"
+   ```
+
+8. **Fight!**  
+   Note: the `move_id` below may not work for you since moves are randomly assigned. Use a valid `move_id` from the previous `StartBattle` call.
+   ```bash
+   curl -b cookies.txt -X POST http://localhost:8080/Fight \
+     -H "X-CSRF-Token: $CSRF" \
+     -d "move_id=24"
+   ```
+
+---
+
+✨ If you enabled the AI configuration, enjoy dynamic descriptions of your Pokémon using their moves against each other in the `"action_description"` field of the response.
 
 ---
 
