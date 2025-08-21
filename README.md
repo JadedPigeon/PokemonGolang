@@ -157,6 +157,7 @@ Whether you're reviewing code, testing your API skills, or just curious about bl
 
 Example AI description using Pikachu and Meowth:
 
+```JSON
 {
 	"user": {
 		"name": "pikachu",
@@ -181,6 +182,7 @@ Example AI description using Pikachu and Meowth:
 		"action_description": "Meowth saunters playfully towards Pikachu, its eyes sparkling with mischief. With a charming pounce, it swipes at Pikachu's paws, deftly snatching away the held item. The little cat Pokémon grins, basking in its cleverness as it retreats with the prize, leaving Pikachu momentarily startled."
 	}
 }
+```
 
 ---
 
