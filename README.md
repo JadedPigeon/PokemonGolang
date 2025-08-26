@@ -29,10 +29,54 @@ Whether you're reviewing code, testing your API skills, or just curious about bl
 ## Quick Start
 
 ### Requirements
-- Go 1.22+
-- PostgreSQL 15+
-- [Goose](https://github.com/pressly/goose) for migrations
-- [sqlc](https://sqlc.dev/) for type-safe database queries
+
+- **Go 1.22+**  
+  [Download Go](https://go.dev/dl/)  
+  Install on Ubuntu/Debian:  
+  ```bash
+  sudo apt update
+  sudo apt install golang-go
+  ```
+  Or follow the [official installation guide](https://go.dev/doc/install).
+
+- **PostgreSQL 15+**  
+  [Download PostgreSQL](https://www.postgresql.org/download/)  
+  Install on Ubuntu/Debian:  
+  ```bash
+  sudo apt update
+  sudo apt install postgresql postgresql-contrib
+  ```
+  Start and enable the service:  
+  ```bash
+  sudo systemctl start postgresql
+  sudo systemctl enable postgresql
+  ```
+  Set up a user and database:  
+  ```bash
+  sudo -u postgres createuser --interactive
+  sudo -u postgres createdb pokemongolang
+  ```
+
+- **[Goose](https://github.com/pressly/goose) (for migrations)**  
+  Install with Go:  
+  ```bash
+  go install github.com/pressly/goose/v3/cmd/goose@latest
+  ```
+  Make sure `$GOPATH/bin` or `$HOME/go/bin` is in your `PATH`.
+
+- **[sqlc](https://sqlc.dev/) (for type-safe database queries)**  
+  Install with Go:  
+  ```bash
+  go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
+  ```
+  Or download a [release binary](https://github.com/sqlc-dev/sqlc/releases).
+
+- **jq** (optional, for parsing JSON in shell scripts)  
+  Install on Ubuntu/Debian:  
+  ```bash
+  sudo apt install jq
+  ```
+  Or see [jq's official site](https://stedolan.github.io/jq/download/) for other platforms.
 
 ### Setup
 1. Clone the repo:
@@ -49,12 +93,12 @@ Whether you're reviewing code, testing your API skills, or just curious about bl
 3. Create and migrate the database:
    ```bash
    createdb pokemongolang
-   goose up
+   goose -dir ./sql/schema postgres "postgres://<postgresUser>:<password>@localhost:5432/pokemongolang?sslmode=disable" up
    ```
 
 4. Add environment variables in `.env`:
    ```env
-   DB_URL=postgres://user:password@localhost:5432/pokemongolang?sslmode=disable
+   DB_URL=postgres://<postgresUser>:<password>@localhost:5432/pokemongolang?sslmode=disable
    BATTLE_AI=on
    BATTLE_AI_MODEL=gpt-4o-mini
    OPENAI_API_KEY=your_api_key_here
@@ -214,4 +258,4 @@ Fork the repo, create a feature branch, and submit a PR.
 ---
 
 ## License
-MIT License. Free to use and extend.  
+MIT License. Free to use and extend.
