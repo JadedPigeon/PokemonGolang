@@ -1,0 +1,53 @@
+services:
+  db:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_DB: pokemongolang
+      POSTGRES_USER: pguser
+      POSTGRES_PASSWORD: pgpassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pguser -d pokemongolang"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://pguser:pgpassword@db:5432/pokemongolang?sslmode=disable
+      BATTLE_AI: "off"
+      BATTLE_AI_MODEL: "gpt-4o-mini"
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 2s
+      retries: 5
+
+  migrations:
+    build:
+      context: .
+      dockerfile: Dockerfile.goose
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./sql/schema:/sql/schema:ro
+    command: [
+      "-dir", "/sql/schema",
+      "postgres",
+      "postgres://pguser:pgpassword@db:5432/pokemongolang?sslmode=disable",
+      "up"
+    ]
+
+volumes:
+  pgdata:

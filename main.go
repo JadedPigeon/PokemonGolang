@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"log"
 	"net/http"
 	"os"
@@ -16,7 +17,15 @@ import (
 func main() {
 	godotenv.Load()
 
-	dbURL := os.Getenv("DB_URL")
+	// dbURL for local development
+	//dbURL := os.Getenv("DB_URL")
+
+	//Containerized db setup
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = os.Getenv("DB_URL")
+	}
+
 	useAI := os.Getenv("BATTLE_AI") == "on"
 	model := os.Getenv("BATTLE_AI_MODEL")
 	if model == "" {
@@ -41,6 +50,20 @@ func main() {
 		Describer: d,
 	}
 
+	// Health route (for Docker healthchecks and quick smoke tests)
+	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		status := struct {
+			OK bool   `json:"ok"`
+			DB string `json:"db"`
+		}{OK: true, DB: "up"}
+		if err := db.Ping(); err != nil {
+			status.DB = "down"
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}
+		_ = json.NewEncoder(w).Encode(status)
+	})
+
 	// Set up routes
 	http.HandleFunc("/register", cfg.RegisterHandler)
 	http.HandleFunc("/login", cfg.LoginHandler)
@@ -52,6 +75,7 @@ func main() {
 	http.HandleFunc("/ChangeActivePokemon", cfg.AuthMiddleware(cfg.ChangeActivePokemonHandler))
 	http.HandleFunc("/StartBattle", cfg.AuthMiddleware(cfg.StartBattleHandler))
 	http.HandleFunc("/Fight", cfg.AuthMiddleware(cfg.FightHandler))
+
 	log.Fatal(http.ListenAndServe(":8080", nil))
 
 }

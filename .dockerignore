@@ -1,0 +1,14 @@
+.git
+.gitignore
+Dockerfile
+docker-compose.yml
+*.env
+.env*
+bin/
+build/
+dist/
+.tmp/
+vendor/
+**/*.log
+**/__pycache__/
+**/.DS_Store
