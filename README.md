@@ -231,7 +231,7 @@ Example AI description using Pikachu and Meowth:
 ---
 
 ###
-For detailed API documentation, see the [Pokémon API Guide](./POKEMONGOLANGAPI.md).
+For detailed API documentation, see the [Pokémon API Guide](./POKEMONGOLANG_API.md).
 
 ---
 
